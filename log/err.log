@@ -1,0 +1,12 @@
+10-24 22:09:15.314 [main] disableAnsi=true(ERROR) utils.Log
+error level
+
+10-24 22:09:15.314 [main] disableAnsi=true(FATAL) utils.Log
+fatal level
+
+10-24 22:09:39.668 [main] disableAnsi=true(ERROR) utils.Log
+error level
+
+10-24 22:09:39.668 [main] disableAnsi=true(FATAL) utils.Log
+fatal level
+
