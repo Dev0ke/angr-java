@@ -1,30 +1,40 @@
 package utils;
-//import log4j
+
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 public class Log {
-      
-    private static final Logger logger = LogManager.getLogger(Log.class);
 
-    // 记录不同级别的日志信息
     public static void info(String message) {
-        logger.info(message);
+        getLogger().info(message);
     }
 
     public static void debug(String message) {
-        logger.debug(message);
+        getLogger().debug(message);
     }
 
     public static void error(String message) {
-        logger.error(message);
+        getLogger().error(message);
+        System.out.println(message);
     }
 
     public static void warn(String message) {
-        logger.warn(message);
+        getLogger().warn(message);
     }
 
     public static void fatal(String message) {
-        logger.fatal(message);
+        getLogger().fatal(message);
     }
+
+    // 动态获取调用此日志类的类名
+    private static Logger getLogger() {
+        String callingClassName = new Throwable().getStackTrace()[2].getClassName();
+        return LogManager.getLogger(callingClassName);
+    }
+
+    public static void printTime(String message, long startTime) {
+        long endTime = System.currentTimeMillis();
+        info(message + "  " + (endTime - startTime) / 1000 + "s");
+    }
+
 }
