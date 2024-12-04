@@ -57,16 +57,16 @@ public class APIFinder {
                 List<String> methodList = new ArrayList<>();
                 for (SootMethod method : sootClass.getMethods()) {
                     //  排除 init
-                    if (method.getName().equals("<init>") || method.getName().equals("<clinit>")) {
+                    if (method.getName().equals("<init>") || method.getName().equals("<clinit>") || !method.isPublic()) {
                         continue;
                     }
 
-                    if (method.isPublic() && !method.isNative() && !method.isAbstract()) {
+                    if (!method.isNative() && !method.isAbstract()) {
                         String methodName = method.getName();
                         if(methodName.contains("lambda$") || methodName.contains("$$Nest$"))
                             continue;
                         Log.debug("|-- Method: " + methodName);
-                        methodList.add(methodName);
+                        methodList.add(method.getSubSignature());
                         method_count++;
                     }
 

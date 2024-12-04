@@ -1,4 +1,4 @@
-package SETest;
+package main;
 
 import accessControl.CheckPermissionAPI;
 import main.CGgen;

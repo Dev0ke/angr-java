@@ -36,18 +36,19 @@ public class JimpleConverter {
     }
 
     public static void main(String[] args) {
-        int apiVersion = getAPIVersion("E:\\decheck_data\\system\\build.prop");
+        String firmPath = "/public/AOSP33/out/target/product/generic/system/";
+        int apiVersion = getAPIVersion(firmPath + "build.prop");
         String androidJarpath = getAndroidJarpath(apiVersion);
-        String directoryPath = "E:\\decheck_data\\system\\";
+   
 
         List<String> apkFiles = new ArrayList<>();
         List<String> jarFiles = new ArrayList<>();
         long startTime = System.currentTimeMillis();
-        findApkAndJarFiles(directoryPath, apkFiles, jarFiles);
+        findApkAndJarFiles(firmPath, apkFiles, jarFiles);
 //        for(String apk : apkFiles){
 //            convert(jarPath,apk);
 //        }
-        convertJar("E:\\decheck_data\\system\\framework\\services.jar",androidJarpath);
+        convertJar(firmPath + "/framework/services.jar",androidJarpath);
         //convert jar
 //        for(String jar : jarFiles){
 //            convertJar(jar,androidJarpath);
@@ -58,11 +59,11 @@ public class JimpleConverter {
     }
 
     public static String getAndroidJarpath(int apiVersion){
-        return Config.androidJarPath + "\\android-" + apiVersion + "\\android.jar";
+        return Config.androidJarPath + "/android-" + apiVersion + "/android.jar";
     }
 
     public static void convertJar(String jarPath,String androidJarPath) {
-        String tempPath = Config.tempPath + File.separator + jarPath.substring(jarPath.lastIndexOf("\\"));
+        String tempPath = Config.tempPath + File.separator + jarPath.substring(jarPath.lastIndexOf("/"));
         try {
             ZipUtils.unzip(jarPath, tempPath);
         } catch (IOException e) {

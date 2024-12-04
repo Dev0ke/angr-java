@@ -15,9 +15,11 @@ public class Log {
 
     public static void error(String message) {
         getLogger().error(message);
-        System.out.println(message);
     }
 
+    public static void errorStack(String message, Exception e) {
+        getLogger().error(message, e);
+    }
     public static void warn(String message) {
         getLogger().warn(message);
     }

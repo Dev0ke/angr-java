@@ -28,9 +28,6 @@ public class CheckUidAPI {
                 //uid
                 {"android.os.Binder","getCallingUid"},
 
-                //pid
-                {"android.os.Binder","getCallingPid"},
-
 
 
         };

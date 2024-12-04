@@ -1,3 +1,4 @@
+package ccc;
 import static accessControl.CheckPermissionAPI.PERMISSION_GRANTED;
 
 class testCheckAPI {

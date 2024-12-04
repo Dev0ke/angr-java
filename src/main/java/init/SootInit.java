@@ -1,7 +1,7 @@
 package init;
 import soot.G;
 import soot.Scene;
-import soot.SootClass;
+
 import soot.options.Options;
 
 import java.util.Arrays;

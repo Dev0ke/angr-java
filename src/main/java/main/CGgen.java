@@ -17,12 +17,13 @@ public class CGgen {
     public CallGraph cg;
     public String className;
     public String methodName;
+    public String methodSignature;
     public HashSet<SootMethod> checkNode;
     public SootMethod entryMethod;
 
-    public CGgen(String className, String methodName) {
+    public CGgen(String className, String methodSignature) {
         this.className = className;
-        this.methodName = methodName;
+        this.methodSignature = methodSignature;
         checkNode = new HashSet<>();
     }
     public static String getFullName(SootMethod method) {
@@ -54,7 +55,10 @@ public class CGgen {
         SootClass sootClass = Scene.v().getSootClass(className);
         return sootClass.getMethodByName(methodName);
     }
-
+    public SootMethod getMethodBySignature(String className, String methodSignature) {
+        SootClass sootClass = Scene.v().getSootClass(className);
+        return sootClass.getMethodUnsafe(methodSignature);
+    }
 
     public void printCG() {
         QueueReader<Edge> edges = cg.listener();
@@ -66,9 +70,7 @@ public class CGgen {
         }
     }
 
-
     public void traverseCG(){
-
         QueueReader<Edge> edges = cg.listener();
         while(edges.hasNext()){
             Edge edge = edges.next();
@@ -122,7 +124,9 @@ public class CGgen {
 
         // 设置入口方法
         List<SootMethod> entryPoints = new ArrayList<>();
-        this.entryMethod = targetClass.getMethodByName(this.methodName);
+        
+        this.entryMethod = targetClass.getMethod(methodSignature);
+        this.methodName = this.entryMethod.getName();
         entryPoints.add(this.entryMethod);
         Scene.v().setEntryPoints(entryPoints);
 
@@ -140,7 +144,7 @@ public class CGgen {
 //        SparkTransformer.v().transform("cg.spark", phaseOptions);
 //        PackManager.v().runPacks();
 //        this.cg = Scene.v().getCallGraph();
-        Log.info("[+] CallGraph generated successfully");
+           Log.info("[+] CallGraph generated successfully");
 
 //        SootMethod src = Scene.v().getSootClass(this.className).getMethodByName(this.methodName);
 //        Iterator<MethodOrMethodContext> targets = new Targets(cg.edgesOutOf(src));

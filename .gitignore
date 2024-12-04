@@ -13,6 +13,10 @@ log/
 *.iml
 *.ipr
 
+### mine ###
+decheck_data/*
+*.log
+
 ### Eclipse ###
 .apt_generated
 .classpath
