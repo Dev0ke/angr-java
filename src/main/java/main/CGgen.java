@@ -53,11 +53,15 @@ public class CGgen {
     }
     public SootMethod getMethodByName(String className, String methodName) {
         SootClass sootClass = Scene.v().getSootClass(className);
-        return sootClass.getMethodByName(methodName);
+        return sootClass.getMethodByNameUnsafe(methodName);
     }
     public SootMethod getMethodBySignature(String className, String methodSignature) {
         SootClass sootClass = Scene.v().getSootClass(className);
-        return sootClass.getMethodUnsafe(methodSignature);
+        return sootClass.getMethod(methodSignature);
+    }
+
+    public SootMethod getMethodBySignature(String sign) {
+        return Scene.v().getMethod(sign);
     }
 
     public void printCG() {

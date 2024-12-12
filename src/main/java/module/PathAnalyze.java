@@ -29,12 +29,12 @@ public class PathAnalyze {
     public Context z3Ctx;
     public long startTime;
     public boolean enableSolve;
-    public List<List<String>> result;
+    public List<List<String>> analyzeResult;
 
     public PathAnalyze(SootMethod entryMethod) {
         this.startTime = System.currentTimeMillis();
         this.entryMethod = entryMethod;
-        this.result = new ArrayList<>();
+        this.analyzeResult = new ArrayList<>();
         HashMap<String, String> ctxConfig = new HashMap<String, String>();
         ctxConfig.put("model", "true");
         this.z3Ctx = new Context(ctxConfig);
@@ -185,7 +185,7 @@ public class PathAnalyze {
             for (Unit u : units) {
                 doOne(u, state, cfg, false);
             }
-            return null;
+            return state;
         }
 
         while (curUnit != null) {
@@ -201,8 +201,10 @@ public class PathAnalyze {
                     Log.debug("|- IfStmt 1, condition: " + condition);
                     branchState.addConstraint(result);
                     if (state.addInstCount(curUnit) <= Config.branchLimit
-                            && (enableLazySolve || solveConstraintsSingle(branchState.constraints))) 
+                            && (enableLazySolve || solveConstraintsSingle(branchState.constraints))) {
                         doOne(target, branchState, cfg, false);
+                        return branchState;
+                            }
                     else
                         Log.info("[-] unsat branch");
 
@@ -210,21 +212,26 @@ public class PathAnalyze {
                     Log.info("|- IfStmt 2, condition: !" + condition);
                     state.addConstraint(this.z3Ctx.mkNot(result));
                     if (state.addInstCount(curUnit) <= Config.branchLimit + 1
-                            && (enableLazySolve || solveConstraintsSingle(branchState.constraints))) 
+                            && (enableLazySolve || solveConstraintsSingle(branchState.constraints))) {
                         doOne(getNextUnit(curUnit, cfg).get(0), state, cfg, false);
-                    else
+                        return state;
+                    }
+                    else{
                         Log.info("[-] unsat branch");
-                    return null;
+                        return state;
+                    }
                 } else {
                     if (state.addInstCount(curUnit) <= Config.branchLimit) {
                         Log.info("|- IfStmt 1, condition: " + condition);
                         doOne(target, branchState, cfg, false);
+                        return branchState;
                     }
                     if (state.addInstCount(curUnit) <= Config.branchLimit + 1) {
                         Log.info("|- IfStmt 2, unsat condition: !" + condition);
                         doOne(getNextUnit(curUnit, cfg).get(0), state, cfg, false);
+                        return state;
                     }
-                    return null;
+                    
                 }
 
             } else if (curUnit instanceof JAssignStmt assignStmt) {
@@ -232,7 +239,7 @@ public class PathAnalyze {
                 Value left = assignStmt.getLeftOp();
                 // TODO ADD FIELD ref
                 if (left instanceof JInstanceFieldRef)
-                    return null;
+                    return state;
 
                 Value right = assignStmt.getRightOp();
 
@@ -250,12 +257,12 @@ public class PathAnalyze {
                     state.pushCall(curUnit);
                     state.pushCFG(cfg);
                     FlowState rtnValue = handleInvoke(invoke, state);
-                    return null;
+                    return state;
                     // TODO ADD INSTANCE FIELD REF
                 } else if (right instanceof JNewExpr newExpr) {
                     if (newExpr.getBaseType().toString().equals("java.lang.SecurityException")) {
                         Log.info("[-] SecurityException branch. Terminate.");
-                        return null;
+                        return state;
                     } else {
                         Log.error("[-] Unsupported right type: " + right.getClass());
                     }
@@ -313,7 +320,7 @@ public class PathAnalyze {
             } else if (curUnit instanceof JThrowStmt) {
                 // TODO TRY CATCH
                 // Log.error("[-] Unsupported ThrowStmt: " + curUnit);
-                return null;
+                return state;
             } else if (curUnit instanceof JEnterMonitorStmt) {
             } else if (curUnit instanceof JExitMonitorStmt) {
             } else if (curUnit instanceof JReturnStmt) {
@@ -373,13 +380,13 @@ public class PathAnalyze {
                 } else {
                     Log.error("|- [-] Unsupported right type: " + right.getClass());
                 }
-            } else {
+            }  else if (curUnit instanceof JGotoStmt) {
+                ;
+            }else {
                 Log.error("Unhandle Unit: " + curUnit + curUnit.getClass());
             }
-
             // end handle ,get next unit
-            if (curUnit instanceof JGotoStmt) {
-                GotoStmt gotoStmt = (GotoStmt) curUnit;
+            if (curUnit instanceof JGotoStmt gotoStmt) {
                 curUnit = gotoStmt.getTarget();
 
             } else {
@@ -405,7 +412,7 @@ public class PathAnalyze {
         List<Value> args = expr.getArgs();
         String methodName = expr.getMethod().getName();
         if (methodName.equals("getCallingUid")) {
-            String symbolName = "TYPE_PID#UID";
+            String symbolName = "TYPE_UID#UID";
             Expr uidExpr = state.getSymbolByName(symbolName);
             if (uidExpr == null) {
                 uidExpr = z3Ctx.mkIntConst(symbolName);
@@ -615,7 +622,7 @@ public class PathAnalyze {
             Unit ret = state.popCall();
             doOne(ret, state, state.popCFG(), true);
         }
-        return null;
+        return state;
     }
 
     // pass the parameters to the callee
@@ -638,19 +645,76 @@ public class PathAnalyze {
     // ============================================================================================
     public void printSimplifyConstaints(List<Expr> constraints) {
         Log.info("================== [Solve] ========================");
-        List<String> r = new ArrayList<>();
+        Solver s = this.z3Ctx.mkSolver();
+        List<Expr> idExpr = new ArrayList<>();
         for (Expr c : constraints) {
-            r.add(c.toString());
+            if(isAccessControlExpr(c)){
+                if(isUIDExpr(c) || isPIDExpr(c)){
+                    idExpr.add(c);
+                } else{
+                    s.add(c);
+                }
+            }
         }
-        this.result.add(r);
+
+
+        // list all symbol and remove which is not constaint
+
+        while (s.check() == com.microsoft.z3.Status.SATISFIABLE) {
+            
+            Model model = s.getModel();
+            Map<Expr, Expr> currentSolution = new HashMap<>();
+            List<String> r = new ArrayList<>();
+            // 获取并输出符号的解
+            for (FuncDecl<?> decl : model.getConstDecls()) {
+                String symbolName = decl.getName().toString();
+                Expr<?> value = model.getConstInterp(decl);
+
+                //put and print
+
+                String result = symbolName + " = " + value;
+                Log.info(result);
+                r.add(result);
+
+                currentSolution.put(this.z3Ctx.mkConst(decl), value);
+            }
+
+            for(Expr e : idExpr){
+                Log.info(e.toString());
+                r.add(e.toString());
+            }
+            analyzeResult.add(r);
+
+            // 添加约束以避免找到相同的解
+            List<BoolExpr> blockingClause = new ArrayList<>();
+            for (Map.Entry<Expr, Expr> entry : currentSolution.entrySet()) {
+                blockingClause.add(this.z3Ctx.mkNot(this.z3Ctx.mkEq(entry.getKey(),
+                entry.getValue())));
+            }
+            s.add(this.z3Ctx.mkOr(blockingClause.toArray(new BoolExpr[0])));
+            Log.info("----------------------------------------\n");
+        }
+
+
+
         Log.info("===================================================");
         return;
     }
 
-    public Set<List<String>> getResult() {
+    public static boolean isAccessControlExpr(Expr e){
+        return e.toString().contains("TYPE_");
+    }
+    public static boolean isUIDExpr(Expr e){
+        return e.toString().contains("TYPE_UID");
+    }
+    public static boolean isPIDExpr(Expr e){
+        return e.toString().contains("TYPE_PID");
+    }
+
+    public Set<List<String>> getAnalyzeResult() {
         Set<List<String>> uniqueLists = new LinkedHashSet<>();
         // 遍历原始列表，将其加入 Set 中
-        for (List<String> sublist : this.result) {
+        for (List<String> sublist : this.analyzeResult) {
             uniqueLists.add(new ArrayList<>(sublist));
         }
         // 清空原始列表并重新赋值

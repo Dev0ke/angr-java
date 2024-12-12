@@ -4,7 +4,10 @@ import init.Config;
 import soot.G;
 import soot.PackManager;
 import soot.Scene;
+import soot.SootClass;
+import soot.SootMethod;
 import soot.options.Options;
+import soot.util.Chain;
 import utils.Log;
 import utils.ZipUtils;
 
@@ -36,7 +39,7 @@ public class JimpleConverter {
     }
 
     public static void main(String[] args) {
-        String firmPath = "/public/AOSP33/out/target/product/generic/system/";
+        String firmPath = "/public/AOSP25/out/target/product/generic_arm64/system/";
         int apiVersion = getAPIVersion(firmPath + "build.prop");
         String androidJarpath = getAndroidJarpath(apiVersion);
    
@@ -45,14 +48,15 @@ public class JimpleConverter {
         List<String> jarFiles = new ArrayList<>();
         long startTime = System.currentTimeMillis();
         findApkAndJarFiles(firmPath, apkFiles, jarFiles);
-//        for(String apk : apkFiles){
-//            convert(jarPath,apk);
-//        }
+    //    for(String apk : apkFiles){
+    //         Log.info(" [+] Converting "+ apk);
+    //        convert(androidJarpath,apk);
+    //    }
         convertJar(firmPath + "/framework/services.jar",androidJarpath);
-        //convert jar
-//        for(String jar : jarFiles){
-//            convertJar(jar,androidJarpath);
-//        }
+//convert jar
+    //    for(String jar : jarFiles){
+    //        convertJar(jar,androidJarpath);
+    //    }
 
 
         Log.info("Time: " + (System.currentTimeMillis() - startTime)/1000 + "s");
@@ -158,13 +162,19 @@ public class JimpleConverter {
         try{
             Scene.v().loadNecessaryClasses();
             // 获取指定类，或者获取所有应用程序类
-//            Chain<SootClass> allClasses = Scene.v().getApplicationClasses();
-//            // 打印所有类名
-//            for (SootClass sc : allClasses) {
-//                System.out.println(sc.getName());
-//            }
+           Chain<SootClass> allClasses = Scene.v().getApplicationClasses();
+           // 打印所有类名
+           for (SootClass sc : allClasses) {
+                
+               if(sc.getName().contains("com.android.server.devicepolicy.DevicePolicyManagerService")){
+                  //print all method
+                  Log.info(sc.getName());
+                    for(SootMethod sm : sc.getMethods()){
+                        Log.info("|-" +sm.getName());
+               }
+           }}
             // 执行 Soot 分析并写出 Jimple 文件
-            PackManager.v().writeOutput();
+            // PackManager.v().writeOutput();
         } catch (RuntimeException e) {
             Log.error("Error processing file(s): " + files);
             e.printStackTrace();
