@@ -7,6 +7,7 @@ import accessControl.CheckUidAPI;
 import module.APIFinder;
 import module.PathAnalyze;
 import soot.SootMethod;
+import soot.jimple.ArithmeticConstant;
 import utils.Log;
 import init.Config;
 import utils.ResultExporter;
@@ -242,6 +243,8 @@ public class Main {
         executor.shutdown();
     }
 
+
+
     public static void main(String[] args) {
         long startTime = System.currentTimeMillis();
         init();
@@ -249,7 +252,9 @@ public class Main {
         // multi();
         // testOne("com.android.server.pm.dex.ArtManagerService","isRuntimeProfilingEnabled");
         // testOne("com.android.server.BinaryTransparencyService$UpdateMeasurementsJobService","onStartJob");
-        // testOne("com.android.server.audio.AudioService","forceRemoteSubmixFullVolume");
+        
+        // testOne("com.android.server.am.ActivityManagerService","clearPendingBackup");
+        // testOne("com.android.server.wm.WindowManagerService","stopFreezingScreen");
         multi2();    
         // end
         // ==========================================================================================================

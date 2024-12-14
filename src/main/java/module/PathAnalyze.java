@@ -9,11 +9,15 @@ import com.microsoft.z3.*;
 
 import com.microsoft.z3.Context;
 import com.microsoft.z3.Expr;
+
+import Engine.Expression;
 import soot.*;
+import soot.dava.internal.javaRep.DIntConstant;
 import soot.jimple.*;
 import soot.jimple.internal.*;
 import soot.jimple.toolkits.ide.icfg.OnTheFlyJimpleBasedICFG;
 import soot.toolkits.graph.DirectedGraph;
+import soot.util.Cons;
 import utils.Log;
 
 import java.util.*;
@@ -42,6 +46,20 @@ public class PathAnalyze {
         // start
         Log.info("[+] Start PathAnalyze in API: " + this.entryMethod.getName());
 
+    }
+
+    public Expr valueToExpr(Value operand,FlowState state){
+        Expr v = null;
+        if(operand instanceof Constant constant)
+            v = Expression.makeConstantExpr(this.z3Ctx,constant);
+        else if(operand instanceof Local)
+            v = state.getExpr(operand);
+        else if(operand instanceof StaticFieldRef staticRef)
+            v = state.getStaticExpr(staticRef);
+        else {
+            Log.error("Unsupported value type: " + operand.getClass());
+        }
+        return v;
     }
 
     public FlowState handleInitMethod() {
@@ -79,103 +97,25 @@ public class PathAnalyze {
         // 获取 unit 的所有后继节点
         return cfg.getSuccsOf(unit);
     }
-
+    public Expr handleCastExpr(Context z3Ctx,JCastExpr castExpr, FlowState state){
+        Expr src = valueToExpr(castExpr.getOp(),state);
+        return Expression.makeCastExpr(z3Ctx,castExpr,src);
+    }
     // handle data flow for one unit
-    public Expr handleCalculate(Value jimpleExpr, FlowState state) {
-        Expr rtn = null;
-        if (jimpleExpr instanceof BinopExpr binop) {
-            Value leftOperand = binop.getOp1();
-            Value rightOperand = binop.getOp2();
-            Expr leftExpr = null;
-            Expr rightExpr = null;
-
-            if (leftOperand instanceof IntConstant)
-                leftExpr = this.z3Ctx.mkInt(((IntConstant) leftOperand).value);
-            else if (leftOperand instanceof Local)
-                leftExpr = state.getExpr(leftOperand);
-            if (rightOperand instanceof IntConstant)
-                rightExpr = this.z3Ctx.mkInt(((IntConstant) rightOperand).value);
-            else if (rightOperand instanceof Local)
-                rightExpr = state.getExpr(rightOperand);
-
-            if (rightExpr == null || leftExpr == null)
-                return null;
-
-            // ConditionExpr
-            if (jimpleExpr instanceof EqExpr) {
-                rtn = this.z3Ctx.mkEq(leftExpr, rightExpr);
-            } else if (jimpleExpr instanceof NeExpr) {
-                rtn = this.z3Ctx.mkNot(this.z3Ctx.mkEq(leftExpr, rightExpr));
-            } else if (jimpleExpr instanceof GeExpr) {
-                rtn = this.z3Ctx.mkGe(leftExpr, rightExpr);
-            } else if (jimpleExpr instanceof GtExpr) {
-                rtn = this.z3Ctx.mkGt(leftExpr, rightExpr);
-            } else if (jimpleExpr instanceof LeExpr) {
-                rtn = this.z3Ctx.mkLe(leftExpr, rightExpr);
-            } else if (jimpleExpr instanceof LtExpr) {
-                rtn = this.z3Ctx.mkLt(leftExpr, rightExpr);
-            }
-
-            // bit
-            else if (jimpleExpr instanceof AndExpr) {
-                rtn = this.z3Ctx.mkAnd((BoolExpr) leftExpr, (BoolExpr) rightExpr);
-            } else if (jimpleExpr instanceof OrExpr) {
-                rtn = this.z3Ctx.mkOr((BoolExpr) leftExpr, (BoolExpr) rightExpr);
-            } else if (jimpleExpr instanceof XorExpr) {
-                rtn = this.z3Ctx.mkXor((BoolExpr) leftExpr, (BoolExpr) rightExpr);
-            } else if (jimpleExpr instanceof ShlExpr) {
-                rtn = this.z3Ctx.mkBVSHL((BitVecExpr) leftExpr, (BitVecExpr) rightExpr);
-            } else if (jimpleExpr instanceof ShrExpr) {
-                rtn = this.z3Ctx.mkBVASHR((BitVecExpr) leftExpr, (BitVecExpr) rightExpr);
-            } else if (jimpleExpr instanceof UshrExpr) {
-                rtn = this.z3Ctx.mkBVLSHR((BitVecExpr) leftExpr, (BitVecExpr) rightExpr);
-            }
-
-            // base
-            else if (jimpleExpr instanceof AddExpr) {
-                rtn = this.z3Ctx.mkAdd(leftExpr, rightExpr);
-            } else if (jimpleExpr instanceof SubExpr) {
-                rtn = this.z3Ctx.mkSub(leftExpr, rightExpr);
-            } else if (jimpleExpr instanceof MulExpr) {
-                rtn = this.z3Ctx.mkMul(leftExpr, rightExpr);
-            } else if (jimpleExpr instanceof DivExpr) {
-                rtn = this.z3Ctx.mkDiv(leftExpr, rightExpr);
-            } else if (jimpleExpr instanceof RemExpr) {
-                rtn = this.z3Ctx.mkRem((IntExpr) leftExpr, (IntExpr) rightExpr);
-            }
-
-            // CMPExpr
-            // TODO is it right?
-            else if (jimpleExpr instanceof CmpExpr) {
-                rtn = this.z3Ctx.mkEq(leftExpr, rightExpr);
-            } else if (jimpleExpr instanceof CmpgExpr) {
-                rtn = this.z3Ctx.mkGe(leftExpr, rightExpr);
-            }
-
-        } else if (jimpleExpr instanceof UnopExpr) {
-
-            UnopExpr unop = (UnopExpr) jimpleExpr;
-            Value operand = unop.getOp();
-            Expr operandExpr = null;
-
-            if (operand instanceof Local) {
-                operandExpr = state.getExpr(operand);
-            } else if (operand instanceof IntConstant) {
-                operandExpr = this.z3Ctx.mkInt(((IntConstant) operand).value);
-            }
-
-            if (unop instanceof NegExpr) {
-                rtn = this.z3Ctx.mkNot((BoolExpr) operandExpr);
-            } else if (unop instanceof LengthExpr) {
-                // TODO
-                Log.error("Unsupported expression type: " + jimpleExpr.getClass());
-
-            }
-        } else {
-            Log.error("Unsupported expression type: " + jimpleExpr.getClass());
-
+    public Expr handleCalculate(Value expr, FlowState state) {
+        if(expr instanceof BinopExpr binopExpr){
+            Expr left = valueToExpr(binopExpr.getOp1(),state);
+            Expr right = valueToExpr(binopExpr.getOp2(),state);
+            return Expression.makeBinOpExpr(this.z3Ctx,binopExpr,left,right);
         }
-        return rtn;
+        else if(expr instanceof UnopExpr unopExpr){
+            Expr src = valueToExpr(unopExpr.getOp(),state);
+            return Expression.makeUnOpExpr(this.z3Ctx,unopExpr,src);
+        }
+        else{
+            Log.error("Unsupported expression type: " + expr.getClass());
+        }
+        return null;
     }
 
     public FlowState doOne(Unit curUnit, FlowState state, DirectedGraph<Unit> cfg, Boolean isFromReturn) {
@@ -197,68 +137,58 @@ public class PathAnalyze {
                 FlowState branchState = state.copy();
                 Unit target = ifStmt.getTarget();
                 if (result != null) {
-                    // sat branch
-                    Log.debug("|- IfStmt 1, condition: " + condition);
+                    // condition is true
+                    Log.info("|- IfStmt 1, condition TRUE: " + condition);
                     branchState.addConstraint(result);
-                    if (state.addInstCount(curUnit) <= Config.branchLimit
+                    if (branchState.addInstCount(curUnit) <= Config.branchLimit
                             && (enableLazySolve || solveConstraintsSingle(branchState.constraints))) {
                         doOne(target, branchState, cfg, false);
-                        return branchState;
-                            }
-                    else
+
+                    } else
                         Log.info("[-] unsat branch");
 
-                    // Unsat branch
-                    Log.info("|- IfStmt 2, condition: !" + condition);
+                    // condition is false
+                    Log.info("|- IfStmt 2, condition FALSE: !" + condition);
                     state.addConstraint(this.z3Ctx.mkNot(result));
                     if (state.addInstCount(curUnit) <= Config.branchLimit + 1
-                            && (enableLazySolve || solveConstraintsSingle(branchState.constraints))) {
+                            && (enableLazySolve || solveConstraintsSingle(state.constraints))) {
                         doOne(getNextUnit(curUnit, cfg).get(0), state, cfg, false);
-                        return state;
-                    }
-                    else{
+                    } else {
                         Log.info("[-] unsat branch");
-                        return state;
                     }
+                    return state;
                 } else {
-                    if (state.addInstCount(curUnit) <= Config.branchLimit) {
-                        Log.info("|- IfStmt 1, condition: " + condition);
+                    if (branchState.addInstCount(curUnit) <= Config.branchLimit) {
+                        Log.info("|- IfStmt 1, condition TRUE: " + condition);
                         doOne(target, branchState, cfg, false);
-                        return branchState;
+
                     }
                     if (state.addInstCount(curUnit) <= Config.branchLimit + 1) {
-                        Log.info("|- IfStmt 2, unsat condition: !" + condition);
+                        Log.info("|- IfStmt 2, condition FALSE: !" + condition);
                         doOne(getNextUnit(curUnit, cfg).get(0), state, cfg, false);
-                        return state;
+
                     }
-                    
+                    return state;
+
                 }
 
             } else if (curUnit instanceof JAssignStmt assignStmt) {
 
                 Value left = assignStmt.getLeftOp();
-                // TODO ADD FIELD ref
-                if (left instanceof JInstanceFieldRef)
-                    return state;
-
                 Value right = assignStmt.getRightOp();
-
+                Expr v = null;
                 if (right instanceof Local) {
-                    Expr v = state.getExpr(right);
-                    if (v != null)
-                        state.addExpr(left, v);
-                } else if (right instanceof IntConstant intConst) {
-                    Expr v = z3Ctx.mkInt(intConst.value);
-                    state.addExpr(left, v);
-                } else if (right instanceof StringConstant strConst) {
-                    Expr v = z3Ctx.mkString(strConst.value);
-                    state.addExpr(left, v);
-                } else if (right instanceof InvokeExpr invoke) {
-                    state.pushCall(curUnit);
-                    state.pushCFG(cfg);
-                    FlowState rtnValue = handleInvoke(invoke, state);
-                    return state;
-                    // TODO ADD INSTANCE FIELD REF
+                    v = state.getExpr(right);
+                } else if (right instanceof Constant constant) {
+                    v = Expression.makeConstantExpr(this.z3Ctx, constant);
+                } else if (right instanceof StaticFieldRef staticRef) {
+                    v = state.getStaticExpr(staticRef);
+                } else if (right instanceof BinopExpr binop) {
+                    v = handleCalculate(binop, state);
+                } else if (right instanceof UnopExpr unop) {
+                    v = handleCalculate(unop, state);
+                } else if (right instanceof JCastExpr cast) {
+                    v = handleCastExpr(this.z3Ctx,cast, state);
                 } else if (right instanceof JNewExpr newExpr) {
                     if (newExpr.getBaseType().toString().equals("java.lang.SecurityException")) {
                         Log.info("[-] SecurityException branch. Terminate.");
@@ -266,16 +196,24 @@ public class PathAnalyze {
                     } else {
                         Log.error("[-] Unsupported right type: " + right.getClass());
                     }
-                } else if(right instanceof BinopExpr binop){
-                    Expr v = handleCalculate(binop, state);
-                    if (v != null)
-                        state.addExpr(left, v);
-                } else if(right instanceof UnopExpr unop){
-                    Expr v = handleCalculate(unop, state);
-                    if (v != null)
-                        state.addExpr(left, v);
-                }else {
+                } else if (right instanceof InvokeExpr invoke) {
+                    state.pushCall(curUnit);
+                    state.pushCFG(cfg);
+                    FlowState rtnValue = handleInvoke(invoke, state);
+                    return state;
+                    // TODO ADD INSTANCE FIELD REF
+                } else {
                     Log.error("Unsupported right type: " + right.getClass());
+                }
+                // TODO ADD FIELD ref
+                if (left instanceof JInstanceFieldRef) {
+                    return state;
+                } else if (left instanceof StaticFieldRef staticRef) {
+                    if (v != null)
+                        state.addStaticField(staticRef, v);
+                } else if (left instanceof Local l) {
+                    if (v != null)
+                        state.addExpr(l, v);
                 }
 
             } else if (curUnit instanceof JLookupSwitchStmt switchStmt) {
@@ -321,7 +259,7 @@ public class PathAnalyze {
                 // TODO TRY CATCH
                 // Log.error("[-] Unsupported ThrowStmt: " + curUnit);
                 return state;
-            } else if (curUnit instanceof JEnterMonitorStmt) {
+                // } else if (curUnit instanceof JEnterMonitorStmt) {
             } else if (curUnit instanceof JExitMonitorStmt) {
             } else if (curUnit instanceof JReturnStmt) {
                 if (state.isCallStackEmpty()) {
@@ -340,27 +278,25 @@ public class PathAnalyze {
                     if (ret instanceof AssignStmt assign) {
                         Value left = assign.getLeftOp();
                         Value retValue = ((ReturnStmt) curUnit).getOp();
-                        Expr retExpr = null;
-                        if (retValue instanceof IntConstant) {
-                            retExpr = z3Ctx.mkInt(((IntConstant) retValue).value);
-                        } else if (retValue instanceof Local) {
-                            retExpr = state.getExpr(retValue);
-                        } else if (retValue instanceof StringConstant) {
-                            retExpr = z3Ctx.mkString(((StringConstant) retValue).value);
-                        } else {
-                            Log.error("[-] Unsupported Ret type: " + ret.getClass());
+                        Expr retExpr = valueToExpr(retValue,state);
+                        if (retExpr != null) {
+                            if (left instanceof Local l) {
+                                state.addExpr(l, retExpr);
+                            } else if (left instanceof StaticFieldRef staticRef) {
+                                state.addStaticField(staticRef, retExpr);
+                            } else {
+                                Log.error("[-] Unsupported Ret LeftOp type: " + ret.getClass());
+                            }
                         }
-                        if (retExpr != null)
-                            state.addExpr(left, retExpr);
                         state.popParam();
                     } else {
-                        Log.error("[-] Unsupported Ret type: " + ret.getClass());
+                        Log.error("[-] Unsupported Ret Unit type: " + ret.getClass());
                     }
                     doOne(ret, state, state.popCFG(), true);
                 }
                 return state;
 
-            } else if (curUnit instanceof JReturnVoidStmt) {
+            } else if (curUnit instanceof JReturnVoidStmt || curUnit instanceof JEnterMonitorStmt) {
                 if (state.isCallStackEmpty()) {
                     if (enableSolve)// Entry method
                         this.printSimplifyConstaints(state.constraints);
@@ -377,12 +313,16 @@ public class PathAnalyze {
                 if (right instanceof ParameterRef p) {
                     int paramIndex = p.getIndex();
                     Expr param = state.getParam(paramIndex);
+                    if (param != null) {
+                        state.addExpr(left, param);
+                    }
+
                 } else {
                     Log.error("|- [-] Unsupported right type: " + right.getClass());
                 }
-            }  else if (curUnit instanceof JGotoStmt) {
+            } else if (curUnit instanceof JGotoStmt) {
                 ;
-            }else {
+            } else {
                 Log.error("Unhandle Unit: " + curUnit + curUnit.getClass());
             }
             // end handle ,get next unit
@@ -412,7 +352,7 @@ public class PathAnalyze {
         List<Value> args = expr.getArgs();
         String methodName = expr.getMethod().getName();
         if (methodName.equals("getCallingUid")) {
-            String symbolName = "TYPE_UID#UID";
+            String symbolName = "TYPE_UID#CallingUid";
             Expr uidExpr = state.getSymbolByName(symbolName);
             if (uidExpr == null) {
                 uidExpr = z3Ctx.mkIntConst(symbolName);
@@ -428,10 +368,10 @@ public class PathAnalyze {
         List<Value> args = expr.getArgs();
         String methodName = expr.getMethod().getName();
         if (methodName.equals("getCallingPid")) {
-            String symbolName = "TYPE_PID#PID";
+            String symbolName = "TYPE_PID#CallingPid";
             Expr pidExpr = state.getSymbolByName(symbolName);
             if (pidExpr == null) {
-                pidExpr = z3Ctx.mkInt(symbolName);
+                pidExpr = z3Ctx.mkIntConst(symbolName);
                 state.addSymbol(pidExpr);
             }
             return pidExpr;
@@ -439,11 +379,22 @@ public class PathAnalyze {
         return null;
     }
 
+    public Expr handleMyPidAPI(InvokeExpr expr, FlowState state) {
+        String symbolName = "TYPE_PID#MY_PID";
+        Expr pidExpr = state.getSymbolByName(symbolName);
+        if (pidExpr == null) {
+            pidExpr = z3Ctx.mkIntConst(symbolName);
+            state.addSymbol(pidExpr);
+        }
+        return pidExpr;
+
+    }
+
     public Expr handleAppOpAPI(InvokeExpr expr, FlowState state) {
         List<Value> args = expr.getArgs();
         String methodName = expr.getMethod().getName();
         if (CheckAppOpAPI.getAllMethodNameByClassName("android.app.AppOpsManager").contains(methodName)
-                || methodName.equals("noteOp") ||  methodName.equals("checkOp")) {
+                || methodName.equals("noteOp") || methodName.equals("checkOp")) {
             // get APPOP STR
             String appOPSTR;
             if (args.get(0) instanceof StringConstant)
@@ -550,59 +501,83 @@ public class PathAnalyze {
         String className = callee.getDeclaringClass().getName();
 
         if (CheckPermissionAPI.allClassNames.contains(className)) {
-            Log.info("[+] Find Permission API: " + className + "." + methodName);
+            Log.warn("[+] Find Permission API: " + className + "." + methodName);
             Expr e = handlePermissionAPI(expr, state);
             if (e != null) {
                 Unit ret = state.popCall();
                 if (ret instanceof AssignStmt assign) {
                     Value left = assign.getLeftOp();
-                    state.addExpr(left, e);
+                    if (left instanceof Local l) {
+                        state.addExpr(l, e);
+                    } else if (left instanceof StaticFieldRef staticRef) {
+                        state.addStaticField(staticRef, e);
+                    } else {
+                        Log.error("[-] Unsupported Ret LeftOp type: " + ret.getClass());
+                    }
                 } else {
-                    Log.error("[-] Unsupported Ret type: " + ret.getClass());
+                    Log.error("[-] Unsupported Ret Unit type: " + ret.getClass());
                 }
 
                 doOne(ret, state, state.popCFG(), true);
                 return null;
             }
 
-        } else if (CheckUidAPI.allClassNames.contains(className)) {
-            Log.info("[+] Find UID API: " + className + "." + methodName);
+        } else if (CheckUidAPI.allClassNames.contains(className) && methodName.equals("getCallingUid")) {
+            Log.warn("[+] Find UID API: " + className + "." + methodName);
             Expr e = handleUidAPI(expr, state);
             if (e != null) {
                 Unit ret = state.popCall();
                 if (ret instanceof AssignStmt assign) {
                     Value left = assign.getLeftOp();
-                    state.addExpr(left, e);
+                    if (left instanceof Local l) {
+                        state.addExpr(l, e);
+                    } else if (left instanceof StaticFieldRef staticRef) {
+                        state.addStaticField(staticRef, e);
+                    } else {
+                        Log.error("[-] Unsupported Ret LeftOp type: " + ret.getClass());
+                    }
                 } else {
-                    Log.error("[-] Unsupported Ret type: " + ret.getClass());
+                    Log.error("[-] Unsupported Ret Unit type:  " + ret.getClass());
                 }
                 doOne(ret, state, state.popCFG(), true);
                 return null;
             }
-        } else if (CheckPidAPI.allClassNames.contains(className)) {
-            Log.info("[+] Find UID API: " + className + "." + methodName);
+        } else if (CheckPidAPI.allClassNames.contains(className) && methodName.equals("getCallingPid")) {
+            Log.warn("[+] Find PID API: " + className + "." + methodName);
             Expr e = handlePidAPI(expr, state);
             if (e != null) {
                 Unit ret = state.popCall();
                 if (ret instanceof AssignStmt assign) {
                     Value left = assign.getLeftOp();
-                    state.addExpr(left, e);
+                    if (left instanceof Local l) {
+                        state.addExpr(l, e);
+                    } else if (left instanceof StaticFieldRef staticRef) {
+                        state.addStaticField(staticRef, e);
+                    } else {
+                        Log.error("[-] Unsupported Ret LeftOp type: " + ret.getClass());
+                    }
                 } else {
-                    Log.error("[-] Unsupported Ret type: " + ret.getClass());
+                    Log.error("[-] Unsupported Ret Unit type: " + ret.getClass());
                 }
                 doOne(ret, state, state.popCFG(), true);
                 return null;
             }
         } else if (CheckAppOpAPI.getAllClassName().contains(className)) {
-            Log.info("[+] Find AppOp API: " + className + "." + methodName);
+            Log.warn("[+] Find AppOp API: " + className + "." + methodName);
             Expr e = handleAppOpAPI(expr, state);
             if (e != null) {
                 Unit ret = state.popCall();
                 if (ret instanceof AssignStmt assign) {
                     Value left = assign.getLeftOp();
-                    state.addExpr(left, e);
+                    if (left instanceof Local l) {
+                        state.addExpr(l, e);
+                    } else if (left instanceof StaticFieldRef staticRef) {
+                        state.addStaticField(staticRef, e);
+                    } else {
+                        Log.error("[-] Unsupported Ret LeftOp type: " + ret.getClass());
+                    }
                 } else {
-                    Log.error("[-] Unsupported Ret type: " + ret.getClass());
+                    Log.error("[-] Unsupported Ret Unit type:  " + ret.getClass());
                 }
                 doOne(ret, state, state.popCFG(), true);
                 return null;
@@ -612,6 +587,25 @@ public class PathAnalyze {
         else if (className.equals("java.lang.Exception")) {
             Log.info("[-] Exception invoke. Terminate. ");
             return null;
+        } else if (className.equals("android.os.Process") && methodName.equals("myPid")) {
+            Expr e = handleMyPidAPI(expr, state);
+            if (e != null) {
+                Unit ret = state.popCall();
+                if (ret instanceof AssignStmt assign) {
+                    Value left = assign.getLeftOp();
+                    if (left instanceof Local l) {
+                        state.addExpr(l, e);
+                    } else if (left instanceof StaticFieldRef staticRef) {
+                        state.addStaticField(staticRef, e);
+                    } else {
+                        Log.error("[-] Unsupported Ret LeftOp type: " + ret.getClass());
+                    }
+                } else {
+                    Log.error("[-] Unsupported Ret Unit type:  " + ret.getClass());
+                }
+                doOne(ret, state, state.popCFG(), true);
+                return null;
+            }
         }
 
         // handle normal case
@@ -632,12 +626,11 @@ public class PathAnalyze {
         List<Expr> params = new ArrayList<>();
         for (int i = 0; i < args.size(); i++) {
             Value arg = args.get(i);
-            if (arg instanceof Local l) {
-                Expr e = state.getExpr(l);
+            Expr e = valueToExpr(arg, state);
+            if (e != null) {
                 params.add(e);
-            } else {
-                Log.error("Unsupported type: " + arg.getClass());
             }
+            
         }
         state.pushParam(params);
     }
@@ -648,20 +641,19 @@ public class PathAnalyze {
         Solver s = this.z3Ctx.mkSolver();
         List<Expr> idExpr = new ArrayList<>();
         for (Expr c : constraints) {
-            if(isAccessControlExpr(c)){
-                if(isUIDExpr(c) || isPIDExpr(c)){
+            if (isAccessControlExpr(c)) {
+                if (isUIDExpr(c) || isPIDExpr(c)) {
                     idExpr.add(c);
-                } else{
+                } else {
                     s.add(c);
                 }
             }
         }
 
-
         // list all symbol and remove which is not constaint
 
         while (s.check() == com.microsoft.z3.Status.SATISFIABLE) {
-            
+
             Model model = s.getModel();
             Map<Expr, Expr> currentSolution = new HashMap<>();
             List<String> r = new ArrayList<>();
@@ -670,7 +662,7 @@ public class PathAnalyze {
                 String symbolName = decl.getName().toString();
                 Expr<?> value = model.getConstInterp(decl);
 
-                //put and print
+                // put and print
 
                 String result = symbolName + " = " + value;
                 Log.info(result);
@@ -679,7 +671,7 @@ public class PathAnalyze {
                 currentSolution.put(this.z3Ctx.mkConst(decl), value);
             }
 
-            for(Expr e : idExpr){
+            for (Expr e : idExpr) {
                 Log.info(e.toString());
                 r.add(e.toString());
             }
@@ -689,25 +681,25 @@ public class PathAnalyze {
             List<BoolExpr> blockingClause = new ArrayList<>();
             for (Map.Entry<Expr, Expr> entry : currentSolution.entrySet()) {
                 blockingClause.add(this.z3Ctx.mkNot(this.z3Ctx.mkEq(entry.getKey(),
-                entry.getValue())));
+                        entry.getValue())));
             }
             s.add(this.z3Ctx.mkOr(blockingClause.toArray(new BoolExpr[0])));
             Log.info("----------------------------------------\n");
         }
 
-
-
         Log.info("===================================================");
         return;
     }
 
-    public static boolean isAccessControlExpr(Expr e){
+    public static boolean isAccessControlExpr(Expr e) {
         return e.toString().contains("TYPE_");
     }
-    public static boolean isUIDExpr(Expr e){
+
+    public static boolean isUIDExpr(Expr e) {
         return e.toString().contains("TYPE_UID");
     }
-    public static boolean isPIDExpr(Expr e){
+
+    public static boolean isPIDExpr(Expr e) {
         return e.toString().contains("TYPE_PID");
     }
 
@@ -784,6 +776,7 @@ public class PathAnalyze {
         public List<List<Expr>> paramList;
         // public Map<SootClass,Map<Value,Expr>> staticMaps;
         public Map<Unit, Integer> instCount;
+        public Map<String, Expr> staticFieldMap;
 
         protected FlowState() {
             this.localMap = new HashMap();
@@ -793,6 +786,7 @@ public class PathAnalyze {
             this.cfgStack = new Stack<>();
             this.paramList = new ArrayList<>();
             this.instCount = new HashMap<>();
+            this.staticFieldMap = new HashMap<>();
         }
 
         public int addInstCount(Unit u) {
@@ -860,7 +854,7 @@ public class PathAnalyze {
         // return this.staticMaps.get(c);
         // }
 
-        // public Expr getExprByValue(SootClass c,Value v){
+        // public Expr getStaticExprByValue(SootClass c,Value v){
         // Map<Value,Expr> map = this.staticMaps.get(c);
         // if(map == null)
         // return null;
@@ -882,6 +876,18 @@ public class PathAnalyze {
                 }
             }
             return null;
+        }
+
+        public void addStaticField(StaticFieldRef s, Expr e) {
+            String className = s.getField().getDeclaringClass().getName();
+            String fieldName = s.getField().getName();
+            this.staticFieldMap.put(className + "#" + fieldName, e);
+        }
+
+        public Expr getStaticExpr(StaticFieldRef s) {
+            String className = s.getField().getDeclaringClass().getName();
+            String fieldName = s.getField().getName();
+            return this.staticFieldMap.get(className + "#" + fieldName);
         }
 
         public void removeLocal(Value l) {
@@ -913,6 +919,7 @@ public class PathAnalyze {
             dest.cfgStack.addAll(this.cfgStack);
             dest.paramList.addAll(this.paramList);
             dest.instCount.putAll(this.instCount);
+            dest.staticFieldMap.putAll(this.staticFieldMap);
         }
 
         public FlowState copy() {
