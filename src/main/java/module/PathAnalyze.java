@@ -62,6 +62,15 @@ public class PathAnalyze {
         return v;
     }
 
+    public void updateValue(Value v, Expr e, FlowState state){
+        if(v instanceof Local)
+            state.addExpr(v, e);
+        else if(v instanceof StaticFieldRef staticRef)
+            state.addStaticField(staticRef, e);
+        else
+            Log.error("[-] Unsupported value type: " + v.getClass());
+    }
+
     public FlowState handleInitMethod() {
         FlowState initState = new FlowState();
         SootClass sc = this.entryMethod.getDeclaringClass();
@@ -99,7 +108,8 @@ public class PathAnalyze {
     }
     public Expr handleCastExpr(Context z3Ctx,JCastExpr castExpr, FlowState state){
         Expr src = valueToExpr(castExpr.getOp(),state);
-        return Expression.makeCastExpr(z3Ctx,castExpr,src);
+        Type type = castExpr.getType();
+        return Expression.makeCastExpr(z3Ctx,type,src);
     }
     // handle data flow for one unit
     public Expr handleCalculate(Value expr, FlowState state) {
@@ -264,14 +274,6 @@ public class PathAnalyze {
             } else if (curUnit instanceof JReturnStmt) {
                 if (state.isCallStackEmpty()) {
                     if (enableSolve)// Entry method
-                        // TODO FIX
-                        // if(entryMethod.getReturnType().toString().equals("boolean")){
-                        // Value retValue = ((ReturnStmt)curUnit).getOp();
-                        // if(retValue instanceof IntConstant intConst){
-                        // if(intConst.value == 0)
-                        // return null;
-                        // }
-                        // }
                         this.printSimplifyConstaints(state.constraints);
                 } else { // callee method
                     Unit ret = state.popCall();
@@ -279,16 +281,18 @@ public class PathAnalyze {
                         Value left = assign.getLeftOp();
                         Value retValue = ((ReturnStmt) curUnit).getOp();
                         Expr retExpr = valueToExpr(retValue,state);
+                        state.popLocalMap();
+
                         if (retExpr != null) {
-                            if (left instanceof Local l) {
-                                state.addExpr(l, retExpr);
-                            } else if (left instanceof StaticFieldRef staticRef) {
-                                state.addStaticField(staticRef, retExpr);
-                            } else {
-                                Log.error("[-] Unsupported Ret LeftOp type: " + ret.getClass());
-                            }
+                            // if(!left.getType().equals(retValue.getType())){
+                            //     retExpr = Expression.makeCastExpr(this.z3Ctx,left.getType(),retExpr);
+
+                            // }
+                            // if(retExpr != null)
+                                updateValue(left, retExpr, state);
                         }
                         state.popParam();
+                        
                     } else {
                         Log.error("[-] Unsupported Ret Unit type: " + ret.getClass());
                     }
@@ -302,6 +306,7 @@ public class PathAnalyze {
                         this.printSimplifyConstaints(state.constraints);
                 } else { // callee method
                     Unit ret = state.popCall();
+                    state.popLocalMap();
                     state.popParam();
                     doOne(ret, state, state.popCFG(), true);
                 }
@@ -314,7 +319,7 @@ public class PathAnalyze {
                     int paramIndex = p.getIndex();
                     Expr param = state.getParam(paramIndex);
                     if (param != null) {
-                        state.addExpr(left, param);
+                        updateValue(left, param, state);
                     }
 
                 } else {
@@ -507,13 +512,7 @@ public class PathAnalyze {
                 Unit ret = state.popCall();
                 if (ret instanceof AssignStmt assign) {
                     Value left = assign.getLeftOp();
-                    if (left instanceof Local l) {
-                        state.addExpr(l, e);
-                    } else if (left instanceof StaticFieldRef staticRef) {
-                        state.addStaticField(staticRef, e);
-                    } else {
-                        Log.error("[-] Unsupported Ret LeftOp type: " + ret.getClass());
-                    }
+                    updateValue(left, e, state);
                 } else {
                     Log.error("[-] Unsupported Ret Unit type: " + ret.getClass());
                 }
@@ -529,13 +528,7 @@ public class PathAnalyze {
                 Unit ret = state.popCall();
                 if (ret instanceof AssignStmt assign) {
                     Value left = assign.getLeftOp();
-                    if (left instanceof Local l) {
-                        state.addExpr(l, e);
-                    } else if (left instanceof StaticFieldRef staticRef) {
-                        state.addStaticField(staticRef, e);
-                    } else {
-                        Log.error("[-] Unsupported Ret LeftOp type: " + ret.getClass());
-                    }
+                    updateValue(left, e, state);
                 } else {
                     Log.error("[-] Unsupported Ret Unit type:  " + ret.getClass());
                 }
@@ -549,13 +542,7 @@ public class PathAnalyze {
                 Unit ret = state.popCall();
                 if (ret instanceof AssignStmt assign) {
                     Value left = assign.getLeftOp();
-                    if (left instanceof Local l) {
-                        state.addExpr(l, e);
-                    } else if (left instanceof StaticFieldRef staticRef) {
-                        state.addStaticField(staticRef, e);
-                    } else {
-                        Log.error("[-] Unsupported Ret LeftOp type: " + ret.getClass());
-                    }
+                    updateValue(left, e, state);
                 } else {
                     Log.error("[-] Unsupported Ret Unit type: " + ret.getClass());
                 }
@@ -569,13 +556,7 @@ public class PathAnalyze {
                 Unit ret = state.popCall();
                 if (ret instanceof AssignStmt assign) {
                     Value left = assign.getLeftOp();
-                    if (left instanceof Local l) {
-                        state.addExpr(l, e);
-                    } else if (left instanceof StaticFieldRef staticRef) {
-                        state.addStaticField(staticRef, e);
-                    } else {
-                        Log.error("[-] Unsupported Ret LeftOp type: " + ret.getClass());
-                    }
+                    updateValue(left, e, state);
                 } else {
                     Log.error("[-] Unsupported Ret Unit type:  " + ret.getClass());
                 }
@@ -593,13 +574,7 @@ public class PathAnalyze {
                 Unit ret = state.popCall();
                 if (ret instanceof AssignStmt assign) {
                     Value left = assign.getLeftOp();
-                    if (left instanceof Local l) {
-                        state.addExpr(l, e);
-                    } else if (left instanceof StaticFieldRef staticRef) {
-                        state.addStaticField(staticRef, e);
-                    } else {
-                        Log.error("[-] Unsupported Ret LeftOp type: " + ret.getClass());
-                    }
+                    updateValue(left, e, state);
                 } else {
                     Log.error("[-] Unsupported Ret Unit type:  " + ret.getClass());
                 }
@@ -621,8 +596,9 @@ public class PathAnalyze {
 
     // pass the parameters to the callee
     public void preInvoke(InvokeExpr expr, FlowState state) {
+
+        // handle param
         List<Value> args = expr.getArgs();
-        // get all ParameterRef
         List<Expr> params = new ArrayList<>();
         for (int i = 0; i < args.size(); i++) {
             Value arg = args.get(i);
@@ -633,6 +609,9 @@ public class PathAnalyze {
             
         }
         state.pushParam(params);
+        
+        //handle localmap
+        state.pushLocalMap();
     }
 
     // ============================================================================================
@@ -777,6 +756,7 @@ public class PathAnalyze {
         // public Map<SootClass,Map<Value,Expr>> staticMaps;
         public Map<Unit, Integer> instCount;
         public Map<String, Expr> staticFieldMap;
+        public Stack<Map<Value, Expr>> saveLocalMaps;
 
         protected FlowState() {
             this.localMap = new HashMap();
@@ -787,6 +767,7 @@ public class PathAnalyze {
             this.paramList = new ArrayList<>();
             this.instCount = new HashMap<>();
             this.staticFieldMap = new HashMap<>();
+            this.saveLocalMaps = new Stack<>();
         }
 
         public int addInstCount(Unit u) {
@@ -850,16 +831,18 @@ public class PathAnalyze {
             return this.paramList.isEmpty();
         }
 
-        // public Map<Value,Expr> getStaticMapByClassName(SootClass c){
-        // return this.staticMaps.get(c);
-        // }
+        public void pushLocalMap() {
+            this.saveLocalMaps.push(this.localMap);
+            this.localMap = new HashMap<>();
+        }
 
-        // public Expr getStaticExprByValue(SootClass c,Value v){
-        // Map<Value,Expr> map = this.staticMaps.get(c);
-        // if(map == null)
-        // return null;
-        // return map.get(v);
-        // }
+        public void popLocalMap() {
+            this.localMap = this.saveLocalMaps.pop();
+            if (this.localMap == null) {
+                this.localMap = new HashMap<>();
+                Log.error("[-] LocalMap is null");
+            }
+        }
 
         public void addConstraint(Expr c) {
             this.constraints.add(c);
@@ -920,6 +903,7 @@ public class PathAnalyze {
             dest.paramList.addAll(this.paramList);
             dest.instCount.putAll(this.instCount);
             dest.staticFieldMap.putAll(this.staticFieldMap);
+            dest.saveLocalMaps.addAll(this.saveLocalMaps);
         }
 
         public FlowState copy() {

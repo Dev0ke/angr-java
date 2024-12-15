@@ -11,16 +11,22 @@ import soot.jimple.internal.*;
 import utils.Log;
 
 public class Expression {
-    public static Expr makeCastExpr(Context ctx,JCastExpr castExpr, Expr src){
+    public static Expr makeCastExpr(Context ctx,Type type, Expr src){
         Expr value = null;
-        Type t = castExpr.getType();
-        if(t instanceof BooleanType){
+
+        if(type instanceof BooleanType){
             // src != 0 
             value = ctx.mkNot(ctx.mkEq(src, ctx.mkInt(0)));
         }
         return value;
 
     }
+
+    public static Expr makeExpr(Type type){
+        Expr v = null;
+        return v;
+    }
+
 
 
     public static Expr makeBinOpExpr(Context ctx,BinopExpr binopExpr, Expr left, Expr right){

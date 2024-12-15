@@ -255,7 +255,8 @@ public class Main {
         
         // testOne("com.android.server.am.ActivityManagerService","clearPendingBackup");
         // testOne("com.android.server.wm.WindowManagerService","stopFreezingScreen");
-        multi2();    
+        // multi2();
+        testOne("com.android.server.pm.ShortcutService","removeDynamicShortcuts");    
         // end
         // ==========================================================================================================
 
