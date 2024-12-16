@@ -28,6 +28,52 @@ public class Expression {
     }
 
 
+    public static Expr convertToBV(Context ctx, Expr src){
+        Expr v = null;
+        if(src.isBV())
+            v = src;
+        else if(src.isInt()){ //TODO FIX LONG 
+            v = ctx.mkInt2BV(64, src);
+        } else if(src.isBool()){
+            v = ctx.mkInt2BV(1, src);
+        } else{
+            Log.error("[Expression] Unsupported type: " + src.getClass());
+        }
+        return v;
+    }
+    
+    public static Expr handleBVCalculate(Context ctx, BinopExpr binopExpr, Expr left, Expr right) {
+        Expr v = null;
+        Expr leftBV = convertToBV(ctx, left);
+        Expr rightBV = convertToBV(ctx, right);
+        
+        // 执行位运算
+        if (binopExpr instanceof AndExpr) {
+            v = ctx.mkBVAND(leftBV, rightBV);
+        } else if (binopExpr instanceof OrExpr) {
+            v = ctx.mkBVOR(leftBV, rightBV);
+        } else if (binopExpr instanceof XorExpr) {
+            v = ctx.mkBVXOR(leftBV, rightBV);
+        } else if (binopExpr instanceof ShlExpr) {
+            v = ctx.mkBVSHL(leftBV, rightBV);
+        } else if (binopExpr instanceof ShrExpr) {
+            v = ctx.mkBVASHR(leftBV, rightBV);
+        } else if (binopExpr instanceof UshrExpr) {
+            v = ctx.mkBVLSHR(leftBV, rightBV);
+        }
+        
+        // 将结果转换回左操作数的类型
+        if (left.isInt()) {
+            v = ctx.mkBV2Int(v, true);
+        } else if (left.isBool()) {
+            // 对于布尔类型，我们需要检查结果是否为0
+            v = ctx.mkNot(ctx.mkEq(v, ctx.mkBV(0, 1)));
+        }
+        // 如果左操作数已经是BV类型，则不需要转换
+        
+        return v;
+    }
+
 
     public static Expr makeBinOpExpr(Context ctx,BinopExpr binopExpr, Expr left, Expr right){
         Expr v = null;
@@ -59,20 +105,6 @@ public class Expression {
         } else if (binopExpr instanceof LtExpr) {
             v = ctx.mkLt(left, right);
         }   
-        // bit
-        else if (binopExpr instanceof AndExpr) {
-            v = ctx.mkAnd( left,  right);
-        } else if (binopExpr instanceof OrExpr) {
-            v = ctx.mkOr( left, right);
-        } else if (binopExpr instanceof XorExpr) {
-            v = ctx.mkXor( left,  right);
-        } else if (binopExpr instanceof ShlExpr) {
-            v = ctx.mkBVSHL(left, right);
-        } else if (binopExpr instanceof ShrExpr) {
-            v = ctx.mkBVASHR(left, right);
-        } else if (binopExpr instanceof UshrExpr) {
-            v = ctx.mkBVLSHR(left, right);
-        }   
         // base
         else if (binopExpr instanceof AddExpr) {
             v = ctx.mkAdd(left, right);
@@ -91,7 +123,9 @@ public class Expression {
             v = ctx.mkEq(left, right);
         } else if (binopExpr instanceof CmpgExpr) {
             v = ctx.mkGe(left, right);
-        }
+        } else if(binopExpr instanceof AndExpr || binopExpr instanceof OrExpr || binopExpr instanceof XorExpr || binopExpr instanceof ShlExpr || binopExpr instanceof ShrExpr || binopExpr instanceof UshrExpr) {
+            v = handleBVCalculate(ctx, binopExpr, left, right);
+        } 
         else{
             Log.error("[Expression] Unsupported BinopExpr type: " + binopExpr.getClass());
         }

@@ -9,8 +9,8 @@ public class Config {
     // Analysis Config
     public static boolean enableLazySolve = false;
     public static boolean enableInterAnalysis = false;
-    public static int branchLimit = 4;
-    public static int timeout = 1800;
+    public static int branchLimit = 1;
+    public static int timeout = 600;
 
     // Path Config
     public static String outputJimplePath = "/home/devoke/decheck/decheck_data/output/jimple";

@@ -4,6 +4,7 @@ import accessControl.CheckAppOpAPI;
 import accessControl.CheckPidAPI;
 import accessControl.CheckUidAPI;
 import init.Config;
+import init.StaticAPIs;
 import accessControl.CheckPermissionAPI;
 import com.microsoft.z3.*;
 
@@ -16,6 +17,7 @@ import soot.dava.internal.javaRep.DIntConstant;
 import soot.jimple.*;
 import soot.jimple.internal.*;
 import soot.jimple.toolkits.ide.icfg.OnTheFlyJimpleBasedICFG;
+import soot.tagkit.Tag;
 import soot.toolkits.graph.DirectedGraph;
 import soot.util.Cons;
 import utils.Log;
@@ -140,6 +142,7 @@ public class PathAnalyze {
 
         while (curUnit != null) {
             Log.info(curUnit.toString());
+            
             if (curUnit instanceof JIfStmt ifStmt) {
                 Value condition = ifStmt.getCondition();
                 Expr result = handleCalculate(condition, state);
@@ -217,7 +220,7 @@ public class PathAnalyze {
                 }
                 // TODO ADD FIELD ref
                 if (left instanceof JInstanceFieldRef) {
-                    return state;
+                    // TODO
                 } else if (left instanceof StaticFieldRef staticRef) {
                     if (v != null)
                         state.addStaticField(staticRef, v);
@@ -269,7 +272,7 @@ public class PathAnalyze {
                 // TODO TRY CATCH
                 // Log.error("[-] Unsupported ThrowStmt: " + curUnit);
                 return state;
-                // } else if (curUnit instanceof JEnterMonitorStmt) {
+          } else if (curUnit instanceof JEnterMonitorStmt) {
             } else if (curUnit instanceof JExitMonitorStmt) {
             } else if (curUnit instanceof JReturnStmt) {
                 if (state.isCallStackEmpty()) {
@@ -300,7 +303,7 @@ public class PathAnalyze {
                 }
                 return state;
 
-            } else if (curUnit instanceof JReturnVoidStmt || curUnit instanceof JEnterMonitorStmt) {
+            } else if (curUnit instanceof JReturnVoidStmt ) {
                 if (state.isCallStackEmpty()) {
                     if (enableSolve)// Entry method
                         this.printSimplifyConstaints(state.constraints);
@@ -440,13 +443,15 @@ public class PathAnalyze {
         String methodName = expr.getMethod().getName();
         if (methodName.startsWith("enforce")) {
             String permissionValue;
-            if (args.get(0) instanceof StringConstant) {
+            if (args.get(0) instanceof StringConstant strConstant) {
                 // add permission symbol
-                permissionValue = ((StringConstant) args.get(0)).value;
+                permissionValue = strConstant.value;
             } else if (args.get(0) instanceof Local) {
                 Value permission = args.get(0);
                 Expr permissionExpr = state.getExpr(permission);
                 permissionValue = permissionExpr.toString();
+                //remove ""
+                permissionValue = permissionValue.substring(1,permissionValue.length()-1);
             } else {
                 Log.error("[-] Unsupported permission type: " + args.get(0).getClass());
                 return null;
@@ -487,7 +492,7 @@ public class PathAnalyze {
 
             // add Constraint for possible results
             List<Expr> possbileValueConstraints = new ArrayList<>();
-            for (int i : CheckPermissionAPI.POSSIBLE_PERMISSIONS_CHECK_RESULTS) {
+            for (int i : CheckPermissionAPI.POSSIBLE_PERMISSIONS_CHECK_RESULTS_OLD) {
                 possbileValueConstraints.add(z3Ctx.mkEq(permissionExpr, z3Ctx.mkInt(i)));
             }
             state.addConstraint(z3Ctx.mkEq(z3Ctx.mkOr(possbileValueConstraints.toArray(new Expr[0])), z3Ctx.mkTrue()));
@@ -584,7 +589,7 @@ public class PathAnalyze {
         }
 
         // handle normal case
-        if (className.equals(entryMethod.getDeclaringClass().getName()) || enableInterAnalysis) {
+        if (className.equals(entryMethod.getDeclaringClass().getName()) || StaticAPIs.ANALYZE_CLASS_SET.contains(methodName) || enableInterAnalysis) {
             preInvoke(expr, state);
             analyzeMethod(callee, state);
         } else {
@@ -603,10 +608,7 @@ public class PathAnalyze {
         for (int i = 0; i < args.size(); i++) {
             Value arg = args.get(i);
             Expr e = valueToExpr(arg, state);
-            if (e != null) {
-                params.add(e);
-            }
-            
+            params.add(e);
         }
         state.pushParam(params);
         
@@ -754,7 +756,7 @@ public class PathAnalyze {
         public Stack<DirectedGraph<Unit>> cfgStack;
         public List<List<Expr>> paramList;
         // public Map<SootClass,Map<Value,Expr>> staticMaps;
-        public Map<Unit, Integer> instCount;
+        public Map<String, Integer> instCount;
         public Map<String, Expr> staticFieldMap;
         public Stack<Map<Value, Expr>> saveLocalMaps;
 
@@ -770,13 +772,15 @@ public class PathAnalyze {
             this.saveLocalMaps = new Stack<>();
         }
 
+        // TODO FIX HASH COLLISION
         public int addInstCount(Unit u) {
+            String unitKey = u.toString();
             int count;
-            if (this.instCount.containsKey(u)) {
-                count = this.instCount.get(u) + 1;
-                this.instCount.put(u, count);
+            if (this.instCount.containsKey(unitKey)) {
+                count = this.instCount.get(unitKey) + 1;
+                this.instCount.put(unitKey, count);
             } else {
-                this.instCount.put(u, 1);
+                this.instCount.put(unitKey, 1);
                 count = 1;
             }
             return count;
