@@ -11,15 +11,65 @@ import soot.jimple.internal.*;
 import utils.Log;
 
 public class Expression {
-    public static Expr makeCastExpr(Context ctx,Type type, Expr src){
-        Expr value = null;
 
-        if(type instanceof BooleanType){
-            // src != 0 
-            value = ctx.mkNot(ctx.mkEq(src, ctx.mkInt(0)));
+    public static Expr makeSymbol(Context ctx, Type type, String name){
+        // All use BV
+        Expr v = null;
+        if(type instanceof BooleanType) {
+            v = ctx.mkBVConst(name, 1);           // 布尔类型用1位BV
+        } else if(type instanceof ByteType) {
+            v = ctx.mkBVConst(name, 8);           // byte用8位BV
+        } else if(type instanceof CharType) {
+            v = ctx.mkBVConst(name, 16);          // char用16位BV
+        } else if(type instanceof ShortType) {
+            v = ctx.mkBVConst(name, 16);          // short用16位BV
+        } else if(type instanceof IntType) {
+            v = ctx.mkBVConst(name, 32);          // int用32位BV
+        } else if(type instanceof LongType) {
+            v = ctx.mkBVConst(name, 64);          // long用64位BV                         // void类型返回null
+        } else {
+            Log.error("[Expression] Unsupported type in makeSymbol: " + type.getClass());
         }
-        return value;
+        
+        return v;
+    }
+    
+    //BV Width convert
+    // src is BV
+    public static Expr makeCastExpr(Context ctx, Type type, Expr src) {
+        Expr value = null;
+        if(src == null)
+            return null;
+        
+        int targetWidth = getTypeWidth(type);
 
+        if(src instanceof BoolExpr){
+            return ctx.mkBV(src.isTrue() ? 1 : 0, targetWidth);
+        }
+
+
+        int srcWidth = ((BitVecExpr)src).getSortSize();
+        // 如果源和目标位宽相同，直接返回
+        if(srcWidth == targetWidth) {
+            return src;
+        }
+        
+        
+        // 扩展位宽
+        if(targetWidth > srcWidth) {
+            // 有符号类型使用符号扩展，无符号类型使用零扩展
+            if(isSignedType(type)) {
+                value = ctx.mkSignExt(targetWidth - srcWidth, src);
+            } else {
+                value = ctx.mkZeroExt(targetWidth - srcWidth, src);
+            }
+        }
+        // 缩小位宽
+        else {
+            value = ctx.mkExtract(targetWidth - 1, 0, src);
+        }
+        
+        return value;
     }
 
     public static Expr makeExpr(Type type){
@@ -28,108 +78,115 @@ public class Expression {
     }
 
 
-    public static Expr convertToBV(Context ctx, Expr src){
-        Expr v = null;
-        if(src.isBV())
-            v = src;
-        else if(src.isInt()){ //TODO FIX LONG 
-            v = ctx.mkInt2BV(64, src);
-        } else if(src.isBool()){
-            v = ctx.mkInt2BV(1, src);
-        } else{
-            Log.error("[Expression] Unsupported type: " + src.getClass());
-        }
-        return v;
-    }
+    // public static Expr convertToBV(Context ctx, Expr src){
+    //     Expr v = null;
+    //     if(src.isBV())
+    //         v = src;
+    //     else if(src.isInt()){ //TODO FIX LONG 
+    //         v = ctx.mkInt2BV(64, src);
+    //     } else if(src.isBool()){
+    //         v = ctx.mkInt2BV(1, src);
+    //     } else{
+    //         Log.error("[Expression] Unsupported type: " + src.getClass());
+    //     }
+    //     return v;
+    // }
     
-    public static Expr handleBVCalculate(Context ctx, BinopExpr binopExpr, Expr left, Expr right) {
-        Expr v = null;
-        Expr leftBV = convertToBV(ctx, left);
-        Expr rightBV = convertToBV(ctx, right);
-        
-        // 执行位运算
-        if (binopExpr instanceof AndExpr) {
-            v = ctx.mkBVAND(leftBV, rightBV);
-        } else if (binopExpr instanceof OrExpr) {
-            v = ctx.mkBVOR(leftBV, rightBV);
-        } else if (binopExpr instanceof XorExpr) {
-            v = ctx.mkBVXOR(leftBV, rightBV);
-        } else if (binopExpr instanceof ShlExpr) {
-            v = ctx.mkBVSHL(leftBV, rightBV);
-        } else if (binopExpr instanceof ShrExpr) {
-            v = ctx.mkBVASHR(leftBV, rightBV);
-        } else if (binopExpr instanceof UshrExpr) {
-            v = ctx.mkBVLSHR(leftBV, rightBV);
-        }
-        
-        // 将结果转换回左操作数的类型
-        if (left.isInt()) {
-            v = ctx.mkBV2Int(v, true);
-        } else if (left.isBool()) {
-            // 对于布尔类型，我们需要检查结果是否为0
-            v = ctx.mkNot(ctx.mkEq(v, ctx.mkBV(0, 1)));
-        }
-        // 如果左操作数已经是BV类型，则不需要转换
-        
-        return v;
+    
+    public static boolean isSignedType(Type type){
+        if(type instanceof ByteType || type instanceof ShortType || type instanceof IntType || type instanceof LongType || type instanceof DoubleType || type instanceof FloatType)
+            return true;
+        return false;
     }
 
-
-    public static Expr makeBinOpExpr(Context ctx,BinopExpr binopExpr, Expr left, Expr right){
+    public static Expr makeBinOpExpr(Context ctx, BinopExpr binopExpr, Expr left, Expr right){
         Expr v = null;
+
+        Type leftType = binopExpr.getOp1().getType();
+        boolean isSigned = isSignedType(leftType);
+
+        //handle null
+        //TODO is it right?
+        if(binopExpr.getOp2() instanceof NullConstant){
+            if(binopExpr instanceof EqExpr){
+                if(left == null)
+                    return null;
+                else if(left.isConst())
+                    return ctx.mkFalse();
+                return ctx.mkEq(left, right);
+            }
+            else if(binopExpr instanceof NeExpr){
+                if(left == null)
+                    return null;
+                else if(left.isConst())
+                    return ctx.mkTrue();
+                return ctx.mkNot(ctx.mkEq(left,right));
+            }
+        }
+
+
         if (right == null || left == null)
-              return null;    
-        // TODO FIX?
+            return null;    
+
+
+        // TODO UNSTABLE PATCH
+        if(left instanceof BoolExpr){
+            left = ctx.mkBV(left.isTrue() ? 1 : 0, 32);
+        }
+        if(right instanceof BoolExpr){
+            right = ctx.mkBV(right.isTrue() ? 1 : 0, 32);
+        }
+
+        
         if (binopExpr instanceof EqExpr) {
-            if (right.toString().contains("NULL") ) {
-                if (left == null)
-                    v = ctx.mkTrue();
-                else
-                    v = ctx.mkFalse();
-            } else
-                v = ctx.mkEq(left, right);
+            v = ctx.mkEq(left, right);
         } else if (binopExpr instanceof NeExpr) {
-            if (right.toString().contains("NULL") ) {
-                if (left != null)
-                    v = ctx.mkTrue();
-                else
-                    v = ctx.mkFalse();
-            } else
-                v = ctx.mkNot(ctx.mkEq(left, right));
+            v = ctx.mkNot(ctx.mkEq(left, right));
         } else if (binopExpr instanceof GeExpr) {
-            v = ctx.mkGe(left, right);
+            v = isSigned ? ctx.mkBVSGE(left, right) : ctx.mkBVUGE(left, right);
         } else if (binopExpr instanceof GtExpr) {
-            v = ctx.mkGt(left, right);
+            v = isSigned ? ctx.mkBVSGT(left, right) : ctx.mkBVUGT(left, right);
         } else if (binopExpr instanceof LeExpr) {
-            v = ctx.mkLe(left, right);
+            v = isSigned ? ctx.mkBVSLE(left, right) : ctx.mkBVULE(left, right);
         } else if (binopExpr instanceof LtExpr) {
-            v = ctx.mkLt(left, right);
+            v = isSigned ? ctx.mkBVSLT(left, right) : ctx.mkBVULT(left, right);
         }   
-        // base
+        // 算术运算
         else if (binopExpr instanceof AddExpr) {
-            v = ctx.mkAdd(left, right);
+            v = ctx.mkBVAdd(left, right);
         } else if (binopExpr instanceof SubExpr) {
-            v = ctx.mkSub(left, right);
+            v = ctx.mkBVSub(left, right);
         } else if (binopExpr instanceof MulExpr) {
-            v = ctx.mkMul(left, right);
+            v = ctx.mkBVMul(left, right);
         } else if (binopExpr instanceof DivExpr) {
-            v = ctx.mkDiv(left, right);
+            v = isSigned ? ctx.mkBVSDiv(left, right) : ctx.mkBVUDiv(left, right);
         } else if (binopExpr instanceof RemExpr) {
-            v = ctx.mkRem(left, right);
+            v = isSigned ? ctx.mkBVSRem(left, right) : ctx.mkBVURem(left, right);
         }   
-        // CMPExpr
-        // TODO is it right?
+        // 比较运算
         else if (binopExpr instanceof CmpExpr) {
             v = ctx.mkEq(left, right);
         } else if (binopExpr instanceof CmpgExpr) {
-            v = ctx.mkGe(left, right);
-        } else if(binopExpr instanceof AndExpr || binopExpr instanceof OrExpr || binopExpr instanceof XorExpr || binopExpr instanceof ShlExpr || binopExpr instanceof ShrExpr || binopExpr instanceof UshrExpr) {
-            v = handleBVCalculate(ctx, binopExpr, left, right);
+            v = isSigned ? ctx.mkBVSGE(left, right) : ctx.mkBVUGE(left, right);
         } 
-        else{
+        // 位运算 
+        else if (binopExpr instanceof AndExpr) {
+            v = ctx.mkBVAND(left, right);
+        } else if (binopExpr instanceof OrExpr) {
+            v = ctx.mkBVOR(left, right);
+        } else if (binopExpr instanceof XorExpr) {
+            v = ctx.mkBVXOR(left, right);
+        } else if (binopExpr instanceof ShlExpr) {
+            v = ctx.mkBVSHL(left, right);
+        } else if (binopExpr instanceof ShrExpr) {
+            v = ctx.mkBVASHR(left, right);
+        } else if (binopExpr instanceof UshrExpr) {
+            v = ctx.mkBVLSHR(left, right);
+        }
+        else {
             Log.error("[Expression] Unsupported BinopExpr type: " + binopExpr.getClass());
         }
-    
+
         return v;
     }
 
@@ -151,43 +208,80 @@ public class Expression {
     }
 
 
-    public static Expr makeConstantExpr(Context ctx,Constant src){
+    public static Expr makeConstantExpr(Context ctx, Constant src) {
         Expr v = null;
         if(src == null)
             return null;
-        if(src instanceof ArithmeticConstant){
+        if(src instanceof ArithmeticConstant) {
             if(src instanceof BooleanConstant boolConstant)
-                v = ctx.mkBool(boolConstant.getBoolean());
+                v = ctx.mkBV(boolConstant.getBoolean() ? 1 : 0, 1);
             else if(src instanceof CharConstant charConstant)
-                v = ctx.mkBV(charConstant.value, 16);
+                v = ctx.mkBV(charConstant.value, 16);  // char是16位无符号
             else if(src instanceof ByteConstant byteConstant)
-                v = ctx.mkBV(byteConstant.value, 8);
+                v = ctx.mkBV(byteConstant.value, 8);   // byte是8位有符号
             else if(src instanceof UByteConstant ubyteConstant)
-                v = ctx.mkBV(ubyteConstant.value, 8);
+                v = ctx.mkBV(ubyteConstant.value, 8);  // ubyte是8位无符号
             else if(src instanceof ShortConstant shortConstant)
-                v = ctx.mkInt(shortConstant.value);
+                v = ctx.mkBV(shortConstant.value, 16); // short是16位有符号
             else if(src instanceof UShortConstant ushortConstant)
-                v = ctx.mkBV(ushortConstant.value, 16);
+                v = ctx.mkBV(ushortConstant.value, 16); // ushort是16位无符号
             else if(src instanceof IntConstant intConstant)
-                v = ctx.mkInt(intConstant.value);
+                v = ctx.mkBV(intConstant.value, 32);    // int是32位有符号
             else if(src instanceof UIntConstant uintConstant)
-                v = ctx.mkBV(uintConstant.value, 16);
+                v = ctx.mkBV(uintConstant.value, 32);   // uint是32位无符号
             else if(src instanceof DIntConstant dIntConstant)
-                v = ctx.mkInt(dIntConstant.value);
+                v = ctx.mkBV(dIntConstant.value, 32);   // dint是32位有符号
             else if(src instanceof LongConstant longConstant)
-                v = ctx.mkInt(longConstant.value);
+                v = ctx.mkBV(longConstant.value, 64);   // long是64位有符号
             else if(src instanceof ULongConstant uLongConstant)
-                v = ctx.mkBV(uLongConstant.value, 64);
+                v = ctx.mkBV(uLongConstant.value, 64);  // ulong是64位无符号
             else
                 Log.error("[Expression] Unsupported ArithmeticConstant: " + src.getClass()); 
         } else if(src instanceof StringConstant stringConstant)
-            v = ctx.mkString(stringConstant.value);
+            v = ctx.mkString(stringConstant.value);     // 字符串保持不变
         else if(src instanceof NullConstant)
-            v = ctx.mkIntConst("NULL");
+            v = ctx.mkBV(0xdeadbeef, 32);                      
         else 
             Log.error("[Expression] Unsupported : " + src.getClass());
         
         return v;
     }
     
+    public static int getTypeWidth(Type type) {
+        // 有符号整数类型
+        if (type instanceof ByteType) {
+            return 8;
+        } else if (type instanceof ShortType) {
+            return 16;
+        } else if (type instanceof IntType) {
+            return 32;
+        } else if (type instanceof LongType) {
+            return 64;
+        }
+        // 无符号整数类型
+        else if (type instanceof UByteType) {
+            return 8;
+        } else if (type instanceof UShortType) {
+            return 16;
+        } else if (type instanceof UIntType) {
+            return 32;
+        } else if (type instanceof ULongType) {
+            return 64;
+        }
+        // 浮点类型
+        else if (type instanceof FloatType) {
+            return 32;
+        } else if (type instanceof DoubleType) {
+            return 64;
+        }
+        // 其他基本类型
+        else if (type instanceof BooleanType) {
+            return 1;
+        } else if (type instanceof CharType) {
+            return 16;
+        }
+        
+        // 对于不支持的类型抛出异常
+        throw new RuntimeException("Unsupported type for width calculation: " + type);
+    }
 }

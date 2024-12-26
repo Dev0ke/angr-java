@@ -1,4 +1,4 @@
-package main;
+package module;
 
 import accessControl.CheckPermissionAPI;
 import init.Config;

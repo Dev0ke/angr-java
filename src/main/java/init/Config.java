@@ -3,14 +3,14 @@ package init;
 public class Config {
 
     // Basic Config
-    public static int threads = 128;
+    public static int threads = 256;
     public static boolean useExistJimple = true;
 
     // Analysis Config
     public static boolean enableLazySolve = false;
-    public static boolean enableInterAnalysis = false;
-    public static int branchLimit = 1;
-    public static int timeout = 600;
+    public static boolean enableInterAnalysis = true;
+    public static int branchLimit = 4;
+    public static int timeout = 300;
 
     // Path Config
     public static String outputJimplePath = "/home/devoke/decheck/decheck_data/output/jimple";
@@ -22,5 +22,5 @@ public class Config {
     public static String inputFirmwarePath = "/home/devoke/decheck/decheck_data/system";
     public static String tempPath = "/home/devoke/decheck/decheck_data/temp";
     public static String apiListPath = "/home/devoke/decheck/decheck_data/test_api_list/arcade_api.txt";
-
+    public static String apiListPath2 = "/home/devoke/decheck/decheck_data/test_api_list/arcade_api2.txt";
 }

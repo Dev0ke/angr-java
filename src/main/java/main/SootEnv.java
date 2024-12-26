@@ -21,13 +21,15 @@ public class SootEnv {
 
     public String androidJarPath;
     public List<String> inputFile;
+    public int inputType;
 
-    public SootEnv(String jarPath, List<String> inputFile) {
+    public SootEnv(String jarPath, List<String> inputFile,int inputType) {
         this.androidJarPath = jarPath;
         this.inputFile = inputFile;
+        this.inputType = inputType;
     }
 
-    public SootMethod geMethodByName(String className, String methodName) {
+    public SootMethod getMethodByName(String className, String methodName) {
         SootClass sootClass = Scene.v().getSootClass(className);
         return sootClass.getMethodByName(methodName);
     }
@@ -41,20 +43,38 @@ public class SootEnv {
         return Scene.v().getMethod(methodSignature);
     }
 
+    //TODO
+    //jar get classes
+
+
+
+    public Set<SootClass> getAllClass() {
+        Set<SootClass> allClass = new HashSet<>();
+        for (SootClass sc : Scene.v().getApplicationClasses()) {
+            allClass.add(sc);
+        }
+        return allClass;
+    }
+
+    public List<SootMethod> getAllMethod(String className){
+        SootClass sootClass = Scene.v().getSootClass(className);
+        return sootClass.getMethods();
+    }
 
     public void initEnv() {
         // 设置 Soot 配置
         G.reset();
         Options.v().set_allow_phantom_refs(true);  // 允许使用虚拟引用
-        Options.v().set_src_prec(Options.src_prec_apk);  // 设置输入源为 APK 文件
+        Options.v().set_src_prec(this.inputType);  // 设置输入源为 APK 文件
         Options.v().set_process_dir(this.inputFile);  // APK 文件路径
         Options.v().set_force_android_jar(this.androidJarPath);  // 设置 Android SDK 的 android.jar 文件路径
         Options.v().set_process_multiple_dex(true);  // 处理多个 DEX 文件
         Options.v().set_whole_program(true);  // 启用整个程序分析
         Options.v().set_verbose(true);
+        
         // 设置输出格式为 Jimple 格式
-        Options.v().set_output_format(Options.output_format_jimple);
-        Options.v().set_output_dir(Config.outputJimplePath);  // 设置输出目录
+        // Options.v().set_output_format(Options.output_format_jimple);
+        // Options.v().set_output_dir(Config.outputJimplePath);  // 设置输出目录
 
         // 加载必要的类
         try{

@@ -1,25 +1,44 @@
-## Guide
-1. 生成精确的CFG
-2. 检查invoke的API，并标记至CFG中的节点（称之为checkPoint）
-3. 从首个checkPoint开始进行流敏感分析，寻找可达非终止路径上的所有checkPoint。
+# angr-java
 
-## TODO
-- EntryAPI Finder
+angr-java是一个使用Java语言重写的，基于Soot和Z3的Java符号执行引擎。
 
-寻找所有公开的API接口，provider..
+原始项目：
+- https://github.com/angr/angr
+- https://github.com/angr/pysoot
 
-根据`C:\Users\devoke\Desktop\Android_base\services\core\java\com\android\server\audio\AudioService.java
-` ,发现这些类的共性，都是继承了Stub
+## 功能特性
 
-- checkPoint Tagger
+- 基于Soot的程序分析框架
+- 使用Z3 SMT求解器作为后端求解引擎。
+- 多线程并行分析提升性能
 
-从EntryAPI为入口，在其CG中寻找所有的APIcheck，标记为checkPoint，同时标记其调用路径，方便后续路径分析。
 
-- Path Analyzer
+## 系统要求
 
-进行逐语句的路径敏感分析，寻找所有可达路径。
+- Java 17或更高版本
+- Maven 3.6或更高版本
 
-? 如何确定终止条件呢？
+## 快速开始
 
-? 有些检查是在onTranact的switch-case里面，如何确定分析的入口呢？
-1. 处理invoke：1.标记点 2.污点作为传入参数 3.返回值与污点比较
+1. 下载z3
+```bash
+cd ~
+wget https://github.com/Z3Prover/z3/releases/download/z3-4.13.4/z3-4.13.4-x64-glibc-2.35.zip
+unzip z3-4.13.4-x64-glibc-2.35.zip
+```
+
+2. 配置环境变量
+
+```bash
+export Z3_DIR=~/z3-4.13.4-x64-glibc-2.35
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$Z3_DIR/bin
+export LC_ALL=C
+```
+
+3. 克隆项目
+
+```bash
+git clone https://github.com/Dev0ke/angr-java
+cd angr-java
+mvn clean package
+```

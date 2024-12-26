@@ -1,17 +1,17 @@
 package module;
 
-import accessControl.CheckAppOpAPI;
-import accessControl.CheckPidAPI;
-import accessControl.CheckUidAPI;
+import accessControl.*;
+
 import init.Config;
 import init.StaticAPIs;
 import accessControl.CheckPermissionAPI;
 import com.microsoft.z3.*;
-
 import com.microsoft.z3.Context;
 import com.microsoft.z3.Expr;
 
 import Engine.Expression;
+import Engine.FlowState;
+import Engine.SymbolSolver;
 import soot.*;
 import soot.dava.internal.javaRep.DIntConstant;
 import soot.jimple.*;
@@ -84,8 +84,8 @@ public class PathAnalyze {
         return initState;
     }
 
-    public IntExpr makePermissionSymbol(String permissionValue) {
-        return this.z3Ctx.mkIntConst(permissionValue);
+    public Expr makePermissionSymbol(String permissionValue) {
+        return this.z3Ctx.mkBVConst(permissionValue, 32);
     }
 
     public void startAnalyze() {
@@ -154,7 +154,7 @@ public class PathAnalyze {
                     Log.info("|- IfStmt 1, condition TRUE: " + condition);
                     branchState.addConstraint(result);
                     if (branchState.addInstCount(curUnit) <= Config.branchLimit
-                            && (enableLazySolve || solveConstraintsSingle(branchState.constraints))) {
+                            && (enableLazySolve || SymbolSolver.solveConstraintsSingle(this.z3Ctx,branchState.constraints))) {
                         doOne(target, branchState, cfg, false);
 
                     } else
@@ -164,7 +164,7 @@ public class PathAnalyze {
                     Log.info("|- IfStmt 2, condition FALSE: !" + condition);
                     state.addConstraint(this.z3Ctx.mkNot(result));
                     if (state.addInstCount(curUnit) <= Config.branchLimit + 1
-                            && (enableLazySolve || solveConstraintsSingle(state.constraints))) {
+                            && (enableLazySolve || SymbolSolver.solveConstraintsSingle(this.z3Ctx,state.constraints))) {
                         doOne(getNextUnit(curUnit, cfg).get(0), state, cfg, false);
                     } else {
                         Log.info("[-] unsat branch");
@@ -237,12 +237,12 @@ public class PathAnalyze {
                 List<IntConstant> caseValues = switchStmt.getLookupValues();
                 for (IntConstant ii : caseValues) {
                     Unit target = switchStmt.getTargetForValue(ii.value);
-                    Expr v = z3Ctx.mkInt(ii.value);
+                    Expr v = z3Ctx.mkBV(ii.value, 32);
                     FlowState branchState = state.copy();
 
                     if (exp != null) {
                         branchState.addConstraint(z3Ctx.mkEq(exp, v));
-                        if (enableLazySolve || solveConstraintsSingle(state.constraints)) {
+                        if (enableLazySolve || SymbolSolver.solveConstraintsSingle(this.z3Ctx,state.constraints)) {
                             doOne(target, branchState, cfg, false);
                         }
                     } else
@@ -254,8 +254,8 @@ public class PathAnalyze {
                 FlowState branchState = state.copy();
                 if (exp != null) {
                     branchState.addConstraint(z3Ctx.mkNot(z3Ctx.mkOr(caseValues.stream()
-                            .map(ii -> z3Ctx.mkEq(exp, z3Ctx.mkInt(ii.value))).toArray(Expr[]::new))));
-                    if (enableLazySolve || solveConstraintsSingle(state.constraints)) {
+                            .map(ii -> z3Ctx.mkEq(exp, z3Ctx.mkBV(ii.value, 32))).toArray(Expr[]::new))));
+                    if (enableLazySolve || SymbolSolver.solveConstraintsSingle(this.z3Ctx,state.constraints)) {
                         doOne(defaultTarget, branchState, cfg, false);
                     }
                 } else
@@ -363,7 +363,7 @@ public class PathAnalyze {
             String symbolName = "TYPE_UID#CallingUid";
             Expr uidExpr = state.getSymbolByName(symbolName);
             if (uidExpr == null) {
-                uidExpr = z3Ctx.mkIntConst(symbolName);
+                uidExpr = z3Ctx.mkBVConst(symbolName, 32);
                 state.addSymbol(uidExpr);
             }
             return uidExpr;
@@ -379,7 +379,7 @@ public class PathAnalyze {
             String symbolName = "TYPE_PID#CallingPid";
             Expr pidExpr = state.getSymbolByName(symbolName);
             if (pidExpr == null) {
-                pidExpr = z3Ctx.mkIntConst(symbolName);
+                pidExpr = z3Ctx.mkBVConst(symbolName, 32);
                 state.addSymbol(pidExpr);
             }
             return pidExpr;
@@ -391,7 +391,7 @@ public class PathAnalyze {
         String symbolName = "TYPE_PID#MY_PID";
         Expr pidExpr = state.getSymbolByName(symbolName);
         if (pidExpr == null) {
-            pidExpr = z3Ctx.mkIntConst(symbolName);
+            pidExpr = z3Ctx.mkBVConst(symbolName, 32);
             state.addSymbol(pidExpr);
         }
         return pidExpr;
@@ -423,14 +423,14 @@ public class PathAnalyze {
             // create or get Expr
             Expr AppOpExpr = state.getSymbolByName(symbolName);
             if (AppOpExpr == null) {
-                AppOpExpr = z3Ctx.mkIntConst(symbolName);
+                AppOpExpr = z3Ctx.mkBVConst(symbolName, 32);
                 state.addSymbol(AppOpExpr);
             }
 
             // add Constraint for possible results
             List<Expr> possbileValueConstraints = new ArrayList<>();
             for (int i : CheckAppOpAPI.POSSIBLE_APPOP_CHECK_RESULTS) {
-                possbileValueConstraints.add(z3Ctx.mkEq(AppOpExpr, z3Ctx.mkInt(i)));
+                possbileValueConstraints.add(z3Ctx.mkEq(AppOpExpr, z3Ctx.mkBV(i, 32)));
             }
             state.addConstraint(z3Ctx.mkEq(z3Ctx.mkOr(possbileValueConstraints.toArray(new Expr[0])), z3Ctx.mkTrue()));
             return AppOpExpr;
@@ -449,9 +449,7 @@ public class PathAnalyze {
             } else if (args.get(0) instanceof Local) {
                 Value permission = args.get(0);
                 Expr permissionExpr = state.getExpr(permission);
-                permissionValue = permissionExpr.toString();
-                //remove ""
-                permissionValue = permissionValue.substring(1,permissionValue.length()-1);
+                permissionValue = permissionExpr.getString();
             } else {
                 Log.error("[-] Unsupported permission type: " + args.get(0).getClass());
                 return null;
@@ -464,7 +462,7 @@ public class PathAnalyze {
                 permissionExpr = makePermissionSymbol(permissionSymbolName);
                 state.addSymbol(permissionExpr);
             }
-            Expr enforceExpr = z3Ctx.mkEq(permissionExpr, z3Ctx.mkInt(PERMISSION_GRANTED));
+            Expr enforceExpr = z3Ctx.mkEq(permissionExpr, z3Ctx.mkBV(PERMISSION_GRANTED, 32));
             state.addConstraint(enforceExpr);
             return enforceExpr;
 
@@ -476,7 +474,7 @@ public class PathAnalyze {
             } else if (args.get(0) instanceof Local) {
                 Value permission = args.get(0);
                 Expr permissionExpr = state.getExpr(permission);
-                permissionValue = permissionExpr.toString();
+                permissionValue = permissionExpr.getString();
             } else {
                 Log.error("[-] Unsupported permission type: " + args.get(0).getClass());
                 return null;
@@ -493,7 +491,7 @@ public class PathAnalyze {
             // add Constraint for possible results
             List<Expr> possbileValueConstraints = new ArrayList<>();
             for (int i : CheckPermissionAPI.POSSIBLE_PERMISSIONS_CHECK_RESULTS_OLD) {
-                possbileValueConstraints.add(z3Ctx.mkEq(permissionExpr, z3Ctx.mkInt(i)));
+                possbileValueConstraints.add(z3Ctx.mkEq(permissionExpr, z3Ctx.mkBV(i, 32)));
             }
             state.addConstraint(z3Ctx.mkEq(z3Ctx.mkOr(possbileValueConstraints.toArray(new Expr[0])), z3Ctx.mkTrue()));
             return permissionExpr;
@@ -587,11 +585,16 @@ public class PathAnalyze {
                 return null;
             }
         }
+        // TOFIX TEMP PATCH
+        Log.info("[+] Analyzing method: " + callee.getName());
+        OnTheFlyJimpleBasedICFG cfg = new OnTheFlyJimpleBasedICFG(callee);
+        Boolean hasActiveBody = callee.hasActiveBody();
 
         // handle normal case
-        if (className.equals(entryMethod.getDeclaringClass().getName()) || StaticAPIs.ANALYZE_CLASS_SET.contains(methodName) || enableInterAnalysis) {
+        if ((entryMethod.getDeclaringClass().getName().contains(className) || StaticAPIs.ANALYZE_CLASS_SET.contains(methodName) || enableInterAnalysis) && hasActiveBody) {
             preInvoke(expr, state);
             analyzeMethod(callee, state);
+            
         } else {
             Unit ret = state.popCall();
             doOne(ret, state, state.popCFG(), true);
@@ -622,8 +625,8 @@ public class PathAnalyze {
         Solver s = this.z3Ctx.mkSolver();
         List<Expr> idExpr = new ArrayList<>();
         for (Expr c : constraints) {
-            if (isAccessControlExpr(c)) {
-                if (isUIDExpr(c) || isPIDExpr(c)) {
+            if (AccessControlUtils.isAccessControlExpr(c)) {
+                if (AccessControlUtils.isUIDExpr(c) || AccessControlUtils.isPIDExpr(c)) {
                     idExpr.add(c);
                 } else {
                     s.add(c);
@@ -672,18 +675,6 @@ public class PathAnalyze {
         return;
     }
 
-    public static boolean isAccessControlExpr(Expr e) {
-        return e.toString().contains("TYPE_");
-    }
-
-    public static boolean isUIDExpr(Expr e) {
-        return e.toString().contains("TYPE_UID");
-    }
-
-    public static boolean isPIDExpr(Expr e) {
-        return e.toString().contains("TYPE_PID");
-    }
-
     public Set<List<String>> getAnalyzeResult() {
         Set<List<String>> uniqueLists = new LinkedHashSet<>();
         // 遍历原始列表，将其加入 Set 中
@@ -694,232 +685,5 @@ public class PathAnalyze {
         return uniqueLists;
     }
 
-    public boolean solveConstraints(List<Expr> constraints) {
-        Log.info("================== [Solve] ========================");
-        Solver s = this.z3Ctx.mkSolver();
-        boolean sat = false;
-        for (Expr c : constraints) {
-            s.add(c);
-            Log.info(c.toString());
-        }
-        // list all symbol and remove which is not constaint
 
-        // while (s.check() == com.microsoft.z3.Status.SATISFIABLE) {
-        // Log.info("[+] SATISFIABLE");
-        // sat = true;
-        //
-        // Model model = s.getModel();
-        // Map<Expr, Expr> currentSolution = new HashMap<>();
-        //
-        // // 获取并输出符号的解
-        // for (FuncDecl<?> decl : model.getConstDecls()) {
-        // String symbolName = decl.getName().toString();
-        // Expr<?> value = model.getConstInterp(decl);
-        // Log.info("Symbol: " + symbolName + ", Value: " + value);
-        // currentSolution.put(this.z3Ctx.mkConst(decl), value);
-        // }
-        //
-        // // 添加约束以避免找到相同的解
-        // List<BoolExpr> blockingClause = new ArrayList<>();
-        // for (Map.Entry<Expr, Expr> entry : currentSolution.entrySet()) {
-        // blockingClause.add(this.z3Ctx.mkNot(this.z3Ctx.mkEq(entry.getKey(),
-        // entry.getValue())));
-        // }
-        // s.add(this.z3Ctx.mkOr(blockingClause.toArray(new BoolExpr[0])));
-        // }
-
-        Log.info("===================================================");
-        return sat;
-    }
-
-    public boolean solveConstraintsSingle(List<Expr> constraints) {
-        if (constraints.size() == 0)
-            return true;
-        Solver s = this.z3Ctx.mkSolver();
-        boolean sat = false;
-        for (Expr c : constraints) {
-            s.add(c);
-        }
-
-        if (s.check() == com.microsoft.z3.Status.SATISFIABLE) {
-            sat = true;
-        }
-        return sat;
-    }
-
-    // 用于表示数据传播的状态
-    class FlowState {
-        public Set<Expr> symbol;
-        public Map<Value, Expr> localMap;
-        public List<Expr> constraints;
-        public Stack<Unit> callStack;
-        public Stack<DirectedGraph<Unit>> cfgStack;
-        public List<List<Expr>> paramList;
-        // public Map<SootClass,Map<Value,Expr>> staticMaps;
-        public Map<String, Integer> instCount;
-        public Map<String, Expr> staticFieldMap;
-        public Stack<Map<Value, Expr>> saveLocalMaps;
-
-        protected FlowState() {
-            this.localMap = new HashMap();
-            this.constraints = new ArrayList();
-            this.symbol = new HashSet<>();
-            this.callStack = new Stack<>();
-            this.cfgStack = new Stack<>();
-            this.paramList = new ArrayList<>();
-            this.instCount = new HashMap<>();
-            this.staticFieldMap = new HashMap<>();
-            this.saveLocalMaps = new Stack<>();
-        }
-
-        // TODO FIX HASH COLLISION
-        public int addInstCount(Unit u) {
-            String unitKey = u.toString();
-            int count;
-            if (this.instCount.containsKey(unitKey)) {
-                count = this.instCount.get(unitKey) + 1;
-                this.instCount.put(unitKey, count);
-            } else {
-                this.instCount.put(unitKey, 1);
-                count = 1;
-            }
-            return count;
-        }
-
-        public void pushCall(Unit u) {
-            this.callStack.push(u);
-        }
-
-        public Unit popCall() {
-            return this.callStack.pop();
-        }
-
-        public boolean isCallStackEmpty() {
-            return this.callStack.isEmpty();
-        }
-
-        public void pushCFG(DirectedGraph<Unit> cfg) {
-            this.cfgStack.push(cfg);
-        }
-
-        public DirectedGraph<Unit> popCFG() {
-            return this.cfgStack.pop();
-        }
-
-        public boolean isCFGstackEmpty() {
-            return this.cfgStack.isEmpty();
-        }
-
-        public void pushParam(List<Expr> params) {
-            this.paramList.add(params);
-        }
-
-        public List<Expr> getParam() {
-            return this.paramList.get(this.paramList.size() - 1);
-        }
-
-        public Expr getParam(int index) {
-            if (this.paramList.isEmpty())
-                return null;
-            List<Expr> exprs = this.paramList.get(this.paramList.size() - 1);
-            if (index < exprs.size())
-                return exprs.get(index);
-            return null;
-        }
-
-        public void popParam() {
-            this.paramList.remove(this.paramList.size() - 1);
-        }
-
-        public boolean isParamEmpty() {
-            return this.paramList.isEmpty();
-        }
-
-        public void pushLocalMap() {
-            this.saveLocalMaps.push(this.localMap);
-            this.localMap = new HashMap<>();
-        }
-
-        public void popLocalMap() {
-            this.localMap = this.saveLocalMaps.pop();
-            if (this.localMap == null) {
-                this.localMap = new HashMap<>();
-                Log.error("[-] LocalMap is null");
-            }
-        }
-
-        public void addConstraint(Expr c) {
-            this.constraints.add(c);
-        }
-
-        public void addSymbol(Expr s) {
-            this.symbol.add(s);
-        }
-
-        public Expr getSymbolByName(String name) {
-            for (Expr s : this.symbol) {
-                if (s.toString().equals(name)) {
-                    return s;
-                }
-            }
-            return null;
-        }
-
-        public void addStaticField(StaticFieldRef s, Expr e) {
-            String className = s.getField().getDeclaringClass().getName();
-            String fieldName = s.getField().getName();
-            this.staticFieldMap.put(className + "#" + fieldName, e);
-        }
-
-        public Expr getStaticExpr(StaticFieldRef s) {
-            String className = s.getField().getDeclaringClass().getName();
-            String fieldName = s.getField().getName();
-            return this.staticFieldMap.get(className + "#" + fieldName);
-        }
-
-        public void removeLocal(Value l) {
-            this.localMap.remove(l);
-        }
-
-        public void removeAllLocal() {
-            this.localMap.clear();
-        }
-
-        public Expr getExpr(Value l) {
-            Expr r = (Expr) this.localMap.get(l);
-            return r;
-        }
-
-        public void addExpr(Value l, Expr e) {
-            if (e == null) {
-                throw new IllegalArgumentException("Not valid");
-            }
-            this.localMap.put(l, e);
-        }
-
-        // TODO 处理深拷贝
-        public void copyTo(FlowState dest) {
-            dest.localMap.putAll(this.localMap);
-            dest.constraints.addAll(this.constraints);
-            dest.symbol.addAll(this.symbol);
-            dest.callStack.addAll(this.callStack);
-            dest.cfgStack.addAll(this.cfgStack);
-            dest.paramList.addAll(this.paramList);
-            dest.instCount.putAll(this.instCount);
-            dest.staticFieldMap.putAll(this.staticFieldMap);
-            dest.saveLocalMaps.addAll(this.saveLocalMaps);
-        }
-
-        public FlowState copy() {
-            FlowState copy = new FlowState();
-            this.copyTo(copy);
-            return copy;
-        }
-
-        public void clear() {
-            this.localMap.clear();
-            this.constraints.clear();
-        }
-
-    }
 }

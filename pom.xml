@@ -23,6 +23,7 @@
             <version>1.7.5</version>
         </dependency>
 
+
         <!-- Log4j Core Dependency -->
         <dependency>
             <groupId>org.apache.logging.log4j</groupId>
@@ -79,7 +80,7 @@
         <dependency>
             <groupId>com.microsoft.z3</groupId>
             <artifactId>z3</artifactId>
-            <version>4.13.3</version>
+            <version>4.13.4</version>
             <systemPath>${basedir}/libs/com.microsoft.z3.jar</systemPath>
             <scope>system</scope>
         </dependency>
