@@ -1,0 +1,2 @@
+["BookMyShow", "gather", "gather", "scatter", "scatter"]
+[[2, 5], [4, 0], [2, 0], [5, 1], [5, 1]]
