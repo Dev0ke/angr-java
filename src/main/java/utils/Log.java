@@ -1,7 +1,10 @@
 package utils;
 
+import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+
+import init.Config;
 
 public class Log {
 
@@ -38,5 +41,12 @@ public class Log {
         long endTime = System.currentTimeMillis();
         info(message + "  " + (endTime - startTime) / 1000 + "s");
     }
+    
+    public static void setLogLevel(String level) {
+        org.apache.logging.log4j.core.config.Configurator.setLevel(LogManager.getRootLogger().getName(), Level.toLevel(level));
+    }
 
+    public static void initLogLevel() {
+        setLogLevel(Config.logLevel);
+    }
 }

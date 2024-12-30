@@ -44,6 +44,7 @@ public class Main {
         CheckUidAPI.init();
         CheckPidAPI.init();
         CheckAppOpAPI.init();
+        Log.initLogLevel();
     }
 
     public static HashMap<String,List<String>> findAPI() {
@@ -329,8 +330,8 @@ public class Main {
     public static void main(String[] args) {
         long startTime = System.currentTimeMillis();
         init();
-        multi2();
-        // testOneBySign("com.android.phone.PhoneInterfaceManager","int getDataNetworkType(java.lang.String)");
+        // multi2();
+        testOneBySign("com.android.phone.PhoneInterfaceManager","int getDataNetworkType(java.lang.String)");
         // multi2();
 
 
@@ -390,17 +391,6 @@ public class Main {
             e.printStackTrace();
         }
         return apiMap;
-    }
-
-    public static void rmFilewithPrefix(String path, String prefix) {
-        java.io.File file = new java.io.File(path);
-        java.io.File[] files = file.listFiles();
-        for (java.io.File f : files) {
-            if (f.getName().startsWith(prefix)) {
-                f.delete();
-            }
-        }
-
     }
 
 }
