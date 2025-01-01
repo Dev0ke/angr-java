@@ -330,8 +330,8 @@ public class Main {
     public static void main(String[] args) {
         long startTime = System.currentTimeMillis();
         init();
-        // multi2();
-        testOneBySign("com.android.phone.PhoneInterfaceManager","int getDataNetworkType(java.lang.String)");
+        multi2();
+        // testOneBySign("com.android.server.audio.AudioService","void setMicrophoneMute(boolean,java.lang.String,int)");
         // multi2();
 
 

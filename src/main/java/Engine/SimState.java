@@ -9,7 +9,7 @@ import soot.*;
 import soot.toolkits.graph.DirectedGraph;
 import utils.Log;
 
-public class FlowState {
+public class SimState {
         public Set<Expr> symbol;
         public Map<Value, Expr> localMap;
         public List<Expr> constraints;
@@ -21,7 +21,7 @@ public class FlowState {
         public Map<String, Expr> staticFieldMap;
         public Stack<Map<Value, Expr>> saveLocalMaps;
 
-        public FlowState() {
+        public SimState() {
             this.localMap = new HashMap();
             this.constraints = new ArrayList();
             this.symbol = new HashSet<>();
@@ -159,7 +159,7 @@ public class FlowState {
         }
 
         // TODO 处理深拷贝
-        public void copyTo(FlowState dest) {
+        public void copyTo(SimState dest) {
             dest.localMap.putAll(this.localMap);
             dest.constraints.addAll(this.constraints);
             dest.symbol.addAll(this.symbol);
@@ -171,8 +171,8 @@ public class FlowState {
             dest.saveLocalMaps.addAll(this.saveLocalMaps);
         }
 
-        public FlowState copy() {
-            FlowState copy = new FlowState();
+        public SimState copy() {
+            SimState copy = new SimState();
             this.copyTo(copy);
             return copy;
         }

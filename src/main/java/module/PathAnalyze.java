@@ -4,13 +4,13 @@ import accessControl.*;
 
 import init.Config;
 import init.StaticAPIs;
-import accessControl.CheckPermissionAPI;
+
 import com.microsoft.z3.*;
 import com.microsoft.z3.Context;
 import com.microsoft.z3.Expr;
 
 import Engine.Expression;
-import Engine.FlowState;
+import Engine.SimState;
 import Engine.SymbolSolver;
 import soot.*;
 import soot.dava.internal.javaRep.DIntConstant;
@@ -50,7 +50,22 @@ public class PathAnalyze {
 
     }
 
-    public Expr valueToExpr(Value operand,FlowState state){
+    public void makeParamsSymbol(SootMethod m, SimState state) {
+        //get soot params of soot method
+        Log.info(m.toString());
+        List<Type> paramTypes = m.getParameterTypes();
+        List<Expr> entryParams = new ArrayList<>();
+        for(int i = 0; i < paramTypes.size(); i++){
+            Type paramType = paramTypes.get(i);
+            Expr paramExpr = Expression.makeSymbol(this.z3Ctx,paramType,"TYPE_PARAM" + i);
+            entryParams.add(paramExpr);
+        }
+        state.pushParam(entryParams);
+
+    }
+
+
+    public Expr valueToExpr(Value operand,SimState state){
         Expr v = null;
         if(operand instanceof Constant constant)
             v = Expression.makeConstantExpr(this.z3Ctx,constant);
@@ -64,7 +79,7 @@ public class PathAnalyze {
         return v;
     }
 
-    public void updateValue(Value v, Expr e, FlowState state){
+    public void updateValue(Value v, Expr e, SimState state){
         if(v instanceof Local)
             state.addExpr(v, e);
         else if(v instanceof StaticFieldRef staticRef)
@@ -73,8 +88,8 @@ public class PathAnalyze {
             Log.error("[-] Unsupported value type: " + v.getClass());
     }
 
-    public FlowState handleInitMethod() {
-        FlowState initState = new FlowState();
+    public SimState handleInitMethod() {
+        SimState initState = new SimState();
         SootClass sc = this.entryMethod.getDeclaringClass();
         // has <clinit>?
         SootMethod clinitMethod = sc.getMethodByNameUnsafe("<clinit>");
@@ -90,14 +105,18 @@ public class PathAnalyze {
 
     public void startAnalyze() {
         // g.displayGraph();
-        FlowState initState = handleInitMethod();
+        SimState initState = handleInitMethod();
         this.enableSolve = true;
-        analyzeMethod(this.entryMethod, initState);
-        printTime("[+] PathAnalyze Finished! ", this.startTime);
+
+        //symbolize params
+        makeParamsSymbol(this.entryMethod, initState);
+        return;
+        // analyzeMethod(this.entryMethod, initState);
+        // printTime("[+] PathAnalyze Finished! ", this.startTime);
 
     }
 
-    public FlowState analyzeMethod(SootMethod m, FlowState state) {
+    public SimState analyzeMethod(SootMethod m, SimState state) {
         Log.info("[+] Analyzing method: " + m.getName());
         DirectedGraph<Unit> cfg = new OnTheFlyJimpleBasedICFG(m).getOrCreateUnitGraph(m);
         Unit entryPoint = cfg.getHeads().get(0);
@@ -108,13 +127,13 @@ public class PathAnalyze {
         // 获取 unit 的所有后继节点
         return cfg.getSuccsOf(unit);
     }
-    public Expr handleCastExpr(Context z3Ctx,JCastExpr castExpr, FlowState state){
+    public Expr handleCastExpr(Context z3Ctx,JCastExpr castExpr, SimState state){
         Expr src = valueToExpr(castExpr.getOp(),state);
         Type type = castExpr.getType();
         return Expression.makeCastExpr(z3Ctx,type,src);
     }
     // handle data flow for one unit
-    public Expr handleCalculate(Value expr, FlowState state) {
+    public Expr handleCalculate(Value expr, SimState state) {
         if(expr instanceof BinopExpr binopExpr){
             Expr left = valueToExpr(binopExpr.getOp1(),state);
             Expr right = valueToExpr(binopExpr.getOp2(),state);
@@ -130,7 +149,7 @@ public class PathAnalyze {
         return null;
     }
 
-    public FlowState doOne(Unit curUnit, FlowState state, DirectedGraph<Unit> cfg, Boolean isFromReturn) {
+    public SimState doOne(Unit curUnit, SimState state, DirectedGraph<Unit> cfg, Boolean isFromReturn) {
         // handle return
         if (isFromReturn) {
             List<Unit> units = getNextUnit(curUnit, cfg);
@@ -147,7 +166,7 @@ public class PathAnalyze {
                 Value condition = ifStmt.getCondition();
                 Expr result = handleCalculate(condition, state);
                 // copy current state
-                FlowState branchState = state.copy();
+                SimState branchState = state.copy();
                 Unit target = ifStmt.getTarget();
                 if (result != null) {
                     // condition is true
@@ -212,7 +231,7 @@ public class PathAnalyze {
                 } else if (right instanceof InvokeExpr invoke) {
                     state.pushCall(curUnit);
                     state.pushCFG(cfg);
-                    FlowState rtnValue = handleInvoke(invoke, state);
+                    SimState rtnValue = handleInvoke(invoke, state);
                     return state;
                     // TODO ADD INSTANCE FIELD REF
                 } else {
@@ -238,7 +257,7 @@ public class PathAnalyze {
                 for (IntConstant ii : caseValues) {
                     Unit target = switchStmt.getTargetForValue(ii.value);
                     Expr v = z3Ctx.mkBV(ii.value, 32);
-                    FlowState branchState = state.copy();
+                    SimState branchState = state.copy();
 
                     if (exp != null) {
                         branchState.addConstraint(z3Ctx.mkEq(exp, v));
@@ -251,7 +270,7 @@ public class PathAnalyze {
 
                 // handle default case
                 Unit defaultTarget = switchStmt.getDefaultTarget();
-                FlowState branchState = state.copy();
+                SimState branchState = state.copy();
                 if (exp != null) {
                     branchState.addConstraint(z3Ctx.mkNot(z3Ctx.mkOr(caseValues.stream()
                             .map(ii -> z3Ctx.mkEq(exp, z3Ctx.mkBV(ii.value, 32))).toArray(Expr[]::new))));
@@ -285,14 +304,8 @@ public class PathAnalyze {
                         Value retValue = ((ReturnStmt) curUnit).getOp();
                         Expr retExpr = valueToExpr(retValue,state);
                         state.popLocalMap();
-
                         if (retExpr != null) {
-                            // if(!left.getType().equals(retValue.getType())){
-                            //     retExpr = Expression.makeCastExpr(this.z3Ctx,left.getType(),retExpr);
-
-                            // }
-                            // if(retExpr != null)
-                                updateValue(left, retExpr, state);
+                            updateValue(left, retExpr, state);
                         }
                         state.popParam();
                         
@@ -356,7 +369,7 @@ public class PathAnalyze {
     }
 
     // TODO add uid limit
-    public Expr handleUidAPI(InvokeExpr expr, FlowState state) {
+    public Expr handleUidAPI(InvokeExpr expr, SimState state) {
         List<Value> args = expr.getArgs();
         String methodName = expr.getMethod().getName();
         if (methodName.equals("getCallingUid")) {
@@ -372,7 +385,7 @@ public class PathAnalyze {
     }
 
     // TODO add uid limit
-    public Expr handlePidAPI(InvokeExpr expr, FlowState state) {
+    public Expr handlePidAPI(InvokeExpr expr, SimState state) {
         List<Value> args = expr.getArgs();
         String methodName = expr.getMethod().getName();
         if (methodName.equals("getCallingPid")) {
@@ -387,7 +400,7 @@ public class PathAnalyze {
         return null;
     }
 
-    public Expr handleMyPidAPI(InvokeExpr expr, FlowState state) {
+    public Expr handleMyPidAPI(InvokeExpr expr, SimState state) {
         String symbolName = "TYPE_PID#MY_PID";
         Expr pidExpr = state.getSymbolByName(symbolName);
         if (pidExpr == null) {
@@ -398,7 +411,7 @@ public class PathAnalyze {
 
     }
 
-    public Expr handleAppOpAPI(InvokeExpr expr, FlowState state) {
+    public Expr handleAppOpAPI(InvokeExpr expr, SimState state) {
         List<Value> args = expr.getArgs();
         String methodName = expr.getMethod().getName();
         if (CheckAppOpAPI.getAllMethodNameByClassName("android.app.AppOpsManager").contains(methodName)
@@ -438,7 +451,7 @@ public class PathAnalyze {
         return null;
     }
 
-    public Expr handlePermissionAPI(InvokeExpr expr, FlowState state) {
+    public Expr handlePermissionAPI(InvokeExpr expr, SimState state) {
         List<Value> args = expr.getArgs();
         String methodName = expr.getMethod().getName();
         if (methodName.startsWith("enforce")) {
@@ -499,11 +512,11 @@ public class PathAnalyze {
         return null;
     }
 
-    public FlowState handleInvoke(InvokeStmt stmt, FlowState state) {
+    public SimState handleInvoke(InvokeStmt stmt, SimState state) {
         return handleInvoke(stmt.getInvokeExpr(), state);
     }
 
-    public FlowState handleInvoke(InvokeExpr expr, FlowState state) {
+    public SimState handleInvoke(InvokeExpr expr, SimState state) {
         SootMethod callee = expr.getMethod();
         String methodName = callee.getName();
         String className = callee.getDeclaringClass().getName();
@@ -603,7 +616,7 @@ public class PathAnalyze {
     }
 
     // pass the parameters to the callee
-    public void preInvoke(InvokeExpr expr, FlowState state) {
+    public void preInvoke(InvokeExpr expr, SimState state) {
 
         // handle param
         List<Value> args = expr.getArgs();

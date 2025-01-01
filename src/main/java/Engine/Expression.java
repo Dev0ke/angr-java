@@ -27,7 +27,22 @@ public class Expression {
             v = ctx.mkBVConst(name, 32);          // int用32位BV
         } else if(type instanceof LongType) {
             v = ctx.mkBVConst(name, 64);          // long用64位BV                         // void类型返回null
-        } else {
+        } else if(type instanceof RefType refType) {
+            //java.lang.String
+            String refClassName = refType.getClassName();
+            if(refClassName.equals("java.lang.String") || refClassName.equals("java.lang.CharSequence"))
+                v = ctx.mkString(name);
+            
+            //TODO LIST
+            // else if(refClassName.equals("soot.ArrayType")){
+                
+            // }
+       
+            else{
+                Log.error("[Expression] Unsupported RefType in makeSymbol: " + refType.getClassName());
+            }
+        } 
+        else {
             Log.error("[Expression] Unsupported type in makeSymbol: " + type.getClass());
         }
         
@@ -240,9 +255,13 @@ public class Expression {
         } else if(src instanceof StringConstant stringConstant)
             v = ctx.mkString(stringConstant.value);     // 字符串保持不变
         else if(src instanceof NullConstant)
-            v = ctx.mkBV(0xdeadbeef, 32);                      
+            v = ctx.mkBV(0xdeadbeef, 32);               
+        else if(src instanceof ClassConstant classConstant){
+            String className = classConstant.value;
+            //TODO          
+        }
         else 
-            Log.error("[Expression] Unsupported : " + src.getClass());
+            Log.error("[Expression] Unsupported Constant : " + src.getClass());
         
         return v;
     }
