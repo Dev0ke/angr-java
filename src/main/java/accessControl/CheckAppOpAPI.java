@@ -6,7 +6,7 @@ import java.util.Set;
 
 
 public class CheckAppOpAPI {
-    private static final HashMap<String, HashSet<String>> apiMap = new HashMap<>();
+    public static final HashMap<String, HashSet<String>> apiMap = new HashMap<>();
     public static Set<String> allClassNames;
     public static final int MODE_ALLOWED = 0;
     public static final int MODE_IGNORED = 1;
@@ -60,6 +60,13 @@ public class CheckAppOpAPI {
         };
         initialize(apiData);
 
+    }
+    public static HashSet<String> getAllAPI(){
+        HashSet<String> allAPI = new HashSet<>();
+        for (String className : apiMap.keySet()){
+            allAPI.addAll(apiMap.get(className));
+        }
+        return allAPI;
     }
 
     public static HashSet<String> getAllClassName(){

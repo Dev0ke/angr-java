@@ -6,7 +6,7 @@ import java.util.Set;
 
 
 public class CheckPidAPI {
-    private static final HashMap<String, HashSet<String>> apiMap = new HashMap<>();
+    public static final HashMap<String, HashSet<String>> apiMap = new HashMap<>();
     public static Set<String> allClassNames;
 
     public static void initialize(String[][] apiData) {
@@ -33,6 +33,13 @@ public class CheckPidAPI {
         };
         initialize(apiData);
 
+    }
+    public static HashSet<String> getAllAPI(){
+        HashSet<String> allAPI = new HashSet<>();
+        for (String className : apiMap.keySet()){
+            allAPI.addAll(apiMap.get(className));
+        }
+        return allAPI;
     }
 
     public static HashSet<String> getAllClassName(){

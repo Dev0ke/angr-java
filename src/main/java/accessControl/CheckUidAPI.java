@@ -6,7 +6,7 @@ import java.util.Set;
 
 
 public class CheckUidAPI {
-    private static final HashMap<String, HashSet<String>> apiMap = new HashMap<>();
+    public static final HashMap<String, HashSet<String>> apiMap = new HashMap<>();
     public static Set<String> allClassNames;
 
     public static void initialize(String[][] apiData) {
@@ -27,12 +27,20 @@ public class CheckUidAPI {
         String[][] apiData = {
                 //uid
                 {"android.os.Binder","getCallingUid"},
+                {"android.os.UserHandle","getCallingUserId"}
 
 
 
         };
         initialize(apiData);
 
+    }
+    public static HashSet<String> getAllAPI(){
+        HashSet<String> allAPI = new HashSet<>();
+        for (String className : apiMap.keySet()){
+            allAPI.addAll(apiMap.get(className));
+        }
+        return allAPI;
     }
 
     public static HashSet<String> getAllClassName(){

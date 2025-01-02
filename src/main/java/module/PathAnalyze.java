@@ -36,15 +36,18 @@ public class PathAnalyze {
     public long startTime;
     public boolean enableSolve;
     public List<List<String>> analyzeResult;
+    public HashSet<SootMethod> CheckMethods;
 
-    public PathAnalyze(SootMethod entryMethod) {
+    public PathAnalyze(SootMethod entryMethod,HashSet<SootMethod> CheckMethods) {
         this.startTime = System.currentTimeMillis();
+        this.CheckMethods = CheckMethods;
         this.entryMethod = entryMethod;
         this.analyzeResult = new ArrayList<>();
         HashMap<String, String> ctxConfig = new HashMap<String, String>();
         ctxConfig.put("model", "true");
         this.z3Ctx = new Context(ctxConfig);
         this.enableSolve = false;
+
         // start
         Log.info("[+] Start PathAnalyze in API: " + this.entryMethod.getName());
 
@@ -110,9 +113,9 @@ public class PathAnalyze {
 
         //symbolize params
         makeParamsSymbol(this.entryMethod, initState);
-        return;
-        // analyzeMethod(this.entryMethod, initState);
-        // printTime("[+] PathAnalyze Finished! ", this.startTime);
+        // return;
+        analyzeMethod(this.entryMethod, initState);
+        printTime("[+] PathAnalyze Finished! ", this.startTime);
 
     }
 
@@ -536,50 +539,50 @@ public class PathAnalyze {
                 doOne(ret, state, state.popCFG(), true);
                 return null;
             }
-
-        } else if (CheckUidAPI.allClassNames.contains(className) && methodName.equals("getCallingUid")) {
-            Log.warn("[+] Find UID API: " + className + "." + methodName);
-            Expr e = handleUidAPI(expr, state);
-            if (e != null) {
-                Unit ret = state.popCall();
-                if (ret instanceof AssignStmt assign) {
-                    Value left = assign.getLeftOp();
-                    updateValue(left, e, state);
-                } else {
-                    Log.error("[-] Unsupported Ret Unit type:  " + ret.getClass());
-                }
-                doOne(ret, state, state.popCFG(), true);
-                return null;
-            }
-        } else if (CheckPidAPI.allClassNames.contains(className) && methodName.equals("getCallingPid")) {
-            Log.warn("[+] Find PID API: " + className + "." + methodName);
-            Expr e = handlePidAPI(expr, state);
-            if (e != null) {
-                Unit ret = state.popCall();
-                if (ret instanceof AssignStmt assign) {
-                    Value left = assign.getLeftOp();
-                    updateValue(left, e, state);
-                } else {
-                    Log.error("[-] Unsupported Ret Unit type: " + ret.getClass());
-                }
-                doOne(ret, state, state.popCFG(), true);
-                return null;
-            }
-        } else if (CheckAppOpAPI.getAllClassName().contains(className)) {
-            Log.warn("[+] Find AppOp API: " + className + "." + methodName);
-            Expr e = handleAppOpAPI(expr, state);
-            if (e != null) {
-                Unit ret = state.popCall();
-                if (ret instanceof AssignStmt assign) {
-                    Value left = assign.getLeftOp();
-                    updateValue(left, e, state);
-                } else {
-                    Log.error("[-] Unsupported Ret Unit type:  " + ret.getClass());
-                }
-                doOne(ret, state, state.popCFG(), true);
-                return null;
-            }
         }
+        // } else if (CheckUidAPI.allClassNames.contains(className) && methodName.equals("getCallingUid")) {
+        //     Log.warn("[+] Find UID API: " + className + "." + methodName);
+        //     Expr e = handleUidAPI(expr, state);
+        //     if (e != null) {
+        //         Unit ret = state.popCall();
+        //         if (ret instanceof AssignStmt assign) {
+        //             Value left = assign.getLeftOp();
+        //             updateValue(left, e, state);
+        //         } else {
+        //             Log.error("[-] Unsupported Ret Unit type:  " + ret.getClass());
+        //         }
+        //         doOne(ret, state, state.popCFG(), true);
+        //         return null;
+        //     }
+        // } else if (CheckPidAPI.allClassNames.contains(className) && methodName.equals("getCallingPid")) {
+        //     Log.warn("[+] Find PID API: " + className + "." + methodName);
+        //     Expr e = handlePidAPI(expr, state);
+        //     if (e != null) {
+        //         Unit ret = state.popCall();
+        //         if (ret instanceof AssignStmt assign) {
+        //             Value left = assign.getLeftOp();
+        //             updateValue(left, e, state);
+        //         } else {
+        //             Log.error("[-] Unsupported Ret Unit type: " + ret.getClass());
+        //         }
+        //         doOne(ret, state, state.popCFG(), true);
+        //         return null;
+        //     }
+        // } else if (CheckAppOpAPI.getAllClassName().contains(className)) {
+        //     Log.warn("[+] Find AppOp API: " + className + "." + methodName);
+        //     Expr e = handleAppOpAPI(expr, state);
+        //     if (e != null) {
+        //         Unit ret = state.popCall();
+        //         if (ret instanceof AssignStmt assign) {
+        //             Value left = assign.getLeftOp();
+        //             updateValue(left, e, state);
+        //         } else {
+        //             Log.error("[-] Unsupported Ret Unit type:  " + ret.getClass());
+        //         }
+        //         doOne(ret, state, state.popCFG(), true);
+        //         return null;
+        //     }
+        // }
 
         else if (className.equals("java.lang.Exception")) {
             Log.info("[-] Exception invoke. Terminate. ");

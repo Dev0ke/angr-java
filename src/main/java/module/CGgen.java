@@ -1,6 +1,7 @@
 package module;
 
-import accessControl.CheckPermissionAPI;
+
+import fj.test.reflect.Check;
 import init.Config;
 import soot.*;
 import soot.jimple.toolkits.callgraph.CallGraph;
@@ -8,7 +9,7 @@ import soot.jimple.toolkits.callgraph.Edge;
 import soot.options.Options;
 import soot.util.queue.QueueReader;
 import utils.Log;
-
+import accessControl.*;
 import java.util.*;
 
 import static init.StaticAPIs.EXCLUDE_API_FOR_ANALYSIS;
@@ -25,7 +26,20 @@ public class CGgen {
         this.className = className;
         this.methodSignature = methodSignature;
         checkNode = new HashSet<>();
+        this.cg = Scene.v().getCallGraph();
     }
+
+    public CGgen(SootMethod entryMethod) {
+        this.entryMethod = entryMethod;
+        this.className = entryMethod.getDeclaringClass().getName();
+        this.methodName = entryMethod.getName();
+        this.methodSignature = entryMethod.getSignature();
+        checkNode = new HashSet<>();
+        Scene.v().setEntryPoints(Collections.singletonList(entryMethod));
+        PackManager.v().runPacks();
+        this.cg = Scene.v().getCallGraph();
+    }
+
     public static String getFullName(SootMethod method) {
         return method.getDeclaringClass().getName() + "." + method.getName();
     }
@@ -33,7 +47,6 @@ public class CGgen {
     public boolean isEntryMethod(SootMethod method){
         return method.equals(this.entryMethod);
     }
-
 
     public void markCheckNode(SootMethod method){
        if(checkNode.contains(method)){
@@ -74,6 +87,8 @@ public class CGgen {
         }
     }
 
+
+
     public void traverseCG(){
         QueueReader<Edge> edges = cg.listener();
         while(edges.hasNext()){
@@ -86,9 +101,9 @@ public class CGgen {
                 continue;
             }
             String targetClassName = tgt.getDeclaringClass().getName();
-            if(CheckPermissionAPI.getAllClassName().contains(targetClassName)){
+            if(AccessControlUtils.isAccessControlClassName(targetClassName)){
                 String targetMethodName = tgt.getName();
-                if(CheckPermissionAPI.getAllMethodNameByClassName(targetClassName).contains(targetMethodName)){
+                if(AccessControlUtils.isAccessControlAPI(targetClassName, targetMethodName)){
                     Log.info("[+] Find checkAPI" + targetClassName + "." + targetMethodName);
                     markCheckNode(src);
                 }

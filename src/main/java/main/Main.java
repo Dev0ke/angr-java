@@ -5,6 +5,8 @@ import accessControl.CheckPermissionAPI;
 import accessControl.CheckPidAPI;
 import accessControl.CheckUidAPI;
 import module.APIFinder;
+
+import module.CheckFinder;
 import module.JimpleConverter;
 import module.PathAnalyze;
 import soot.G;
@@ -24,6 +26,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
@@ -297,7 +300,9 @@ public class Main {
     private static void processMethod(SootMethod m, String className, String methodSignature,
             ResultExporter resultExporter, AtomicInteger success) throws TimeoutException {
         long paStartTime = System.currentTimeMillis();
-        PathAnalyze pa = new PathAnalyze(m);
+        // CheckFinder cf = new CheckFinder(m);
+        // HashSet<SootMethod> CheckNodes = cf.runFind();
+        PathAnalyze pa = new PathAnalyze(m,null);
         pa.startAnalyze();
         Set<List<String>> result = pa.getAnalyzeResult();
         long paEndTime = System.currentTimeMillis();
@@ -331,7 +336,7 @@ public class Main {
         long startTime = System.currentTimeMillis();
         init();
         multi2();
-        // testOneBySign("com.android.server.audio.AudioService","void setMicrophoneMute(boolean,java.lang.String,int)");
+        // testOneBySign("com.android.server.backup.Trampoline","void setBackupProvisioned(boolean)");
         // multi2();
 
 
@@ -357,10 +362,17 @@ public class Main {
         List<String> allFiles = FirmwareUtils.findAllFiles("/public/AOSP24/out/target/product/mini-emulator-armv7-a-neon/system/");
         FirmwareUtils.removeErrorFile(allFiles);
         Log.info("[-] Total files: " + allFiles.size());
+
         SootEnv sootEnv = new SootEnv(androidJarPath, allFiles, Options.src_prec_apk);
         sootEnv.initEnv();
+
         SootMethod m2 = sootEnv.getMethodBySignature(className, signature);
-        PathAnalyze pa = new PathAnalyze(m2);
+        CheckFinder cf = new CheckFinder(m2);
+        HashSet<SootMethod> result = cf.runFind();
+        // for (SootMethod m : result) {
+        //     Log.info("[-] " + m);
+        // }
+        PathAnalyze pa = new PathAnalyze(m2,result);
         pa.startAnalyze();
     
     }

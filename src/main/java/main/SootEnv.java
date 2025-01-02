@@ -72,6 +72,10 @@ public class SootEnv {
         Options.v().set_whole_program(true);  // 启用整个程序分析
         Options.v().set_verbose(true);
         
+
+        //call graph
+        // Options.v().setPhaseOption("cg.spark", "on");
+        
         // 设置输出格式为 Jimple 格式
         // Options.v().set_output_format(Options.output_format_jimple);
         // Options.v().set_output_dir(Config.outputJimplePath);  // 设置输出目录

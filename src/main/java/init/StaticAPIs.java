@@ -10,6 +10,7 @@ public class StaticAPIs {
             "android.os.EventLogTags",
             "android.os.Parcel",
             "android.os.BaseBundle",
+            "android.os.Handler",
             "android.util.Log",
             "android.util.Slog",
             "java.*",
@@ -23,4 +24,14 @@ public class StaticAPIs {
     public static final Set<String> ANALYZE_CLASS_SET = Set.of(
     "android.os.UserHandle"
     );
+
+
+    public static boolean shouldAnalyze(String className){
+       for (String excludeAPI : EXCLUDE_API_FOR_ANALYSIS) {
+            if (className.startsWith(excludeAPI.replace("*", ""))) {
+                return false;
+            }
+        }
+        return true;
+    }
 }
