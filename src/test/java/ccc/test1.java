@@ -84,16 +84,7 @@ public class test1 {
         }
 
     }
-    public int cc(int c){
-        return c+1;
-    }
-    public void ss(int a){
-        int b = a;
-        int r = cc(b);
-        int d = r+3;
 
-
-    }
 
     // warp2
     public void check4() throws Exception {

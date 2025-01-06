@@ -16,7 +16,7 @@ public class Expression {
         // All use BV
         Expr v = null;
         if(type instanceof BooleanType) {
-            v = ctx.mkBVConst(name, 1);           // 布尔类型用1位BV
+            v = ctx.mkBoolConst(name);
         } else if(type instanceof ByteType) {
             v = ctx.mkBVConst(name, 8);           // byte用8位BV
         } else if(type instanceof CharType) {
@@ -298,7 +298,7 @@ public class Expression {
             return 1;
         } else if (type instanceof CharType) {
             return 16;
-        }
+        } 
         
         // 对于不支持的类型抛出异常
         throw new RuntimeException("Unsupported type for width calculation: " + type);

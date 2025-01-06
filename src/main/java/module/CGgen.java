@@ -1,7 +1,6 @@
 package module;
 
 
-import fj.test.reflect.Check;
 import init.Config;
 import soot.*;
 import soot.jimple.toolkits.callgraph.CallGraph;

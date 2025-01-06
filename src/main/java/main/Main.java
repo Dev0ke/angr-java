@@ -4,32 +4,30 @@ import accessControl.CheckAppOpAPI;
 import accessControl.CheckPermissionAPI;
 import accessControl.CheckPidAPI;
 import accessControl.CheckUidAPI;
-import module.APIFinder;
 
 import module.CheckFinder;
 import module.JimpleConverter;
 import module.PathAnalyze;
-import soot.G;
+
 import soot.Scene;
 import soot.SootClass;
 import soot.SootMethod;
-import soot.jimple.ArithmeticConstant;
+
 import soot.options.Options;
 import soot.util.Chain;
 import utils.FirmwareUtils;
 import utils.Log;
 import init.Config;
 import utils.ResultExporter;
-import utils.ZipUtils;
+
 
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
+
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedList;
+
 import java.util.List;
-import java.util.Queue;
+
 import java.util.Set;
 import java.util.concurrent.*;
 import java.io.BufferedReader;
@@ -190,7 +188,7 @@ public class Main {
         // 8. 等待所有任务完成
         for (Future<?> future : futures) {
             try {
-                future.get(Config.timeout, TimeUnit.SECONDS);
+                future.get(Config.timeout, TimeUnit.HOURS);
             } catch (Exception e) {
                 Log.error("Task completion error: " + e.getMessage());
             }
@@ -300,9 +298,9 @@ public class Main {
     private static void processMethod(SootMethod m, String className, String methodSignature,
             ResultExporter resultExporter, AtomicInteger success) throws TimeoutException {
         long paStartTime = System.currentTimeMillis();
-        // CheckFinder cf = new CheckFinder(m);
-        // HashSet<SootMethod> CheckNodes = cf.runFind();
-        PathAnalyze pa = new PathAnalyze(m,null);
+        CheckFinder cf = new CheckFinder(m);
+        HashSet<SootMethod> CheckNodes = cf.runFind();
+        PathAnalyze pa = new PathAnalyze(m,CheckNodes);
         pa.startAnalyze();
         Set<List<String>> result = pa.getAnalyzeResult();
         long paEndTime = System.currentTimeMillis();
@@ -333,10 +331,10 @@ public class Main {
     }
 
     public static void main(String[] args) {
-        long startTime = System.currentTimeMillis();
+
         init();
         multi2();
-        // testOneBySign("com.android.server.backup.Trampoline","void setBackupProvisioned(boolean)");
+        // testOneBySign("com.android.phone.PhoneInterfaceManager","java.lang.String sendEnvelopeWithStatus(int,java.lang.String)");
         // multi2();
 
 

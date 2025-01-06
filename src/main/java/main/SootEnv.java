@@ -1,20 +1,12 @@
 package main;
 
-import init.Config;
+
 import soot.G;
-import soot.PackManager;
 import soot.Scene;
 import soot.SootClass;
 import soot.SootMethod;
 import soot.options.Options;
-import soot.util.Chain;
 import utils.Log;
-import utils.ZipUtils;
-
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileReader;
-import java.io.IOException;
 import java.util.*;
 
 public class SootEnv {

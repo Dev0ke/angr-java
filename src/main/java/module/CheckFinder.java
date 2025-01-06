@@ -1,7 +1,7 @@
 package module;
 
 import soot.jimple.toolkits.ide.icfg.OnTheFlyJimpleBasedICFG;
-import soot.toolkits.graph.DirectedGraph;
+import utils.Log;
 import soot.*;
 import soot.jimple.internal.*;
 import accessControl.*;
@@ -11,10 +11,11 @@ import init.StaticAPIs;
 public class CheckFinder {
     public SootMethod entryMethod;
     public HashSet<SootMethod> CheckMethods;
-
+    public HashSet<SootMethod> visitedMethods;
     public CheckFinder(SootMethod entryMethod) {
         this.entryMethod = entryMethod;
         CheckMethods = new HashSet<SootMethod>();
+        visitedMethods = new HashSet<SootMethod>();
     }
 
     public HashSet<SootMethod> runFind() {
@@ -73,10 +74,21 @@ public class CheckFinder {
             // analyze remain call
             while(!stack.isEmpty()){
                 SootMethod callee = stack.pop();
-
-                if (StaticAPIs.shouldAnalyze(callee.getDeclaringClass().getName()) &&   isAccessControlNode(callee)) {
-                    CheckMethods.add(method);   
+                if(CheckMethods.contains(callee)){
                     isAccessControl = true;
+                    continue;
+                }
+
+                if(visitedMethods.contains(callee)){
+                    continue;
+                }
+                if (StaticAPIs.shouldAnalyze(callee.getDeclaringClass().getName())) {
+                    Log.info(callee.toString());
+                    visitedMethods.add(callee);
+                    if(isAccessControlNode(callee)){
+                        CheckMethods.add(method);   
+                        isAccessControl = true;
+                    }
                 }
                 
             }

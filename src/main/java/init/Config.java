@@ -5,12 +5,12 @@ public class Config {
     // Basic Config
     public static int threads = 256;
     public static boolean useExistJimple = true;
-    public static String logLevel = "INFO";
+    public static String logLevel = "ERROR";
     // Analysis Config
     public static boolean enableLazySolve = false;
-    public static boolean enableInterAnalysis = false;
+    public static boolean enableInterAnalysis = true;
     public static int branchLimit = 4;
-    public static int timeout = 300;
+    public static int timeout = 3000000;
 
     // Path Config
     public static String outputJimplePath = "/home/devoke/decheck/decheck_data/output/jimple";

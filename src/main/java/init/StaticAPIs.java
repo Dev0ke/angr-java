@@ -16,7 +16,7 @@ public class StaticAPIs {
             "java.*",
             "jdk.*",
             "com.android.internal.os.BinderInternal",
-            "android.os.Binder",
+            "android.os.*",
             "java.lang.Throwable"
     );
 

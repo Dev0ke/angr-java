@@ -13,17 +13,16 @@ import Engine.Expression;
 import Engine.SimState;
 import Engine.SymbolSolver;
 import soot.*;
-import soot.dava.internal.javaRep.DIntConstant;
 import soot.jimple.*;
 import soot.jimple.internal.*;
 import soot.jimple.toolkits.ide.icfg.OnTheFlyJimpleBasedICFG;
-import soot.tagkit.Tag;
+
 import soot.toolkits.graph.DirectedGraph;
-import soot.util.Cons;
+
 import utils.Log;
 
 import java.util.*;
-import java.util.concurrent.Flow;
+
 
 import static accessControl.CheckPermissionAPI.PERMISSION_GRANTED;
 import static init.Config.enableInterAnalysis;
@@ -133,6 +132,10 @@ public class PathAnalyze {
     public Expr handleCastExpr(Context z3Ctx,JCastExpr castExpr, SimState state){
         Expr src = valueToExpr(castExpr.getOp(),state);
         Type type = castExpr.getType();
+        //TODO 
+        if(type instanceof RefType refType){
+            return null;
+        }
         return Expression.makeCastExpr(z3Ctx,type,src);
     }
     // handle data flow for one unit
@@ -607,7 +610,7 @@ public class PathAnalyze {
         Boolean hasActiveBody = callee.hasActiveBody();
 
         // handle normal case
-        if ((entryMethod.getDeclaringClass().getName().contains(className) || StaticAPIs.ANALYZE_CLASS_SET.contains(methodName) || enableInterAnalysis) && hasActiveBody) {
+        if ((entryMethod.getDeclaringClass().getName().contains(className) || StaticAPIs.ANALYZE_CLASS_SET.contains(methodName) || (enableInterAnalysis && this.CheckMethods.contains(callee) ) ) && hasActiveBody ) {
             preInvoke(expr, state);
             analyzeMethod(callee, state);
             

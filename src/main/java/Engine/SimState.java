@@ -22,8 +22,8 @@ public class SimState {
         public Stack<Map<Value, Expr>> saveLocalMaps;
 
         public SimState() {
-            this.localMap = new HashMap();
-            this.constraints = new ArrayList();
+            this.localMap = new HashMap<>();
+            this.constraints = new ArrayList<Expr>();
             this.symbol = new HashSet<>();
             this.callStack = new Stack<>();
             this.cfgStack = new Stack<>();

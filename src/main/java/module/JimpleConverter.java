@@ -2,7 +2,6 @@ package module;
 
 import init.Config;
 import soot.G;
-import soot.PackManager;
 import soot.Scene;
 import soot.SootClass;
 import soot.SootMethod;
