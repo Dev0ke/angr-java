@@ -16,10 +16,11 @@ import soot.*;
 import soot.jimple.*;
 import soot.jimple.internal.*;
 import soot.jimple.toolkits.ide.icfg.OnTheFlyJimpleBasedICFG;
-
+import soot.tagkit.Tag;
 import soot.toolkits.graph.DirectedGraph;
 import soot.toolkits.graph.ExceptionalBlockGraph;
 import soot.toolkits.graph.ExceptionalUnitGraph;
+import soot.util.Chain;
 import utils.Log;
 
 import java.util.*;
@@ -126,10 +127,7 @@ public class PathAnalyze {
         return doOne(entryPoint, state, cfg, false);
     }
 
-    private List<Unit> getNextUnit(Unit unit, ExceptionalUnitGraph cfg) {
-        // 获取 unit 的所有后继节点
-        return cfg.getSuccsOf(unit);
-    }
+
     public Expr handleCastExpr(Context z3Ctx,JCastExpr castExpr, SimState state){
         Expr src = valueToExpr(castExpr.getOp(),state);
         Type type = castExpr.getType();
@@ -159,7 +157,7 @@ public class PathAnalyze {
     public SimState doOne(Unit curUnit, SimState state, ExceptionalUnitGraph cfg, Boolean isFromReturn) {
         // handle return
         if (isFromReturn) {
-            List<Unit> units = getNextUnit(curUnit, cfg);
+            List<Unit> units = cfg.getUnexceptionalSuccsOf(curUnit);
             for (Unit u : units) {
                 doOne(u, state, cfg, false);
             }
@@ -191,7 +189,7 @@ public class PathAnalyze {
                     state.addConstraint(this.z3Ctx.mkNot(result));
                     if (state.addInstCount(curUnit) <= Config.branchLimit + 1
                             && (enableLazySolve || SymbolSolver.solveConstraintsSingle(this.z3Ctx,state.constraints))) {
-                        doOne(getNextUnit(curUnit, cfg).get(0), state, cfg, false);
+                        doOne(cfg.getUnexceptionalSuccsOf(curUnit).get(0), state, cfg, false);
                     } else {
                         Log.info("[-] unsat branch");
                     }
@@ -204,7 +202,7 @@ public class PathAnalyze {
                     }
                     if (state.addInstCount(curUnit) <= Config.branchLimit + 1) {
                         Log.info("|- IfStmt 2, condition FALSE: !" + condition);
-                        doOne(getNextUnit(curUnit, cfg).get(0), state, cfg, false);
+                        doOne(cfg.getUnexceptionalSuccsOf(curUnit).get(0), state, cfg, false);
 
                     }
                     return state;
@@ -297,7 +295,8 @@ public class PathAnalyze {
             } else if (curUnit instanceof JThrowStmt) {
                 // TODO TRY CATCH
                 //get body
-                
+                List<Unit> exceptionalSuccs = cfg.getExceptionalSuccsOf(curUnit);
+                        
                 return state;
           } else if (curUnit instanceof JEnterMonitorStmt) {
             } else if (curUnit instanceof JExitMonitorStmt) {
@@ -359,7 +358,7 @@ public class PathAnalyze {
                 curUnit = gotoStmt.getTarget();
 
             } else {
-                List<Unit> nextUnits = getNextUnit(curUnit, cfg);
+                List<Unit> nextUnits =cfg.getUnexceptionalSuccsOf(curUnit);
                 for (Unit u : nextUnits) {
                     if (u instanceof JIdentityStmt id) {
                         Value right = id.getRightOp();
