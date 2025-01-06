@@ -18,7 +18,8 @@ import soot.jimple.internal.*;
 import soot.jimple.toolkits.ide.icfg.OnTheFlyJimpleBasedICFG;
 
 import soot.toolkits.graph.DirectedGraph;
-
+import soot.toolkits.graph.ExceptionalBlockGraph;
+import soot.toolkits.graph.ExceptionalUnitGraph;
 import utils.Log;
 
 import java.util.*;
@@ -120,12 +121,12 @@ public class PathAnalyze {
 
     public SimState analyzeMethod(SootMethod m, SimState state) {
         Log.info("[+] Analyzing method: " + m.getName());
-        DirectedGraph<Unit> cfg = new OnTheFlyJimpleBasedICFG(m).getOrCreateUnitGraph(m);
+        ExceptionalUnitGraph cfg = (ExceptionalUnitGraph) new OnTheFlyJimpleBasedICFG(m).getOrCreateUnitGraph(m);
         Unit entryPoint = cfg.getHeads().get(0);
         return doOne(entryPoint, state, cfg, false);
     }
 
-    private List<Unit> getNextUnit(Unit unit, DirectedGraph<Unit> cfg) {
+    private List<Unit> getNextUnit(Unit unit, ExceptionalUnitGraph cfg) {
         // 获取 unit 的所有后继节点
         return cfg.getSuccsOf(unit);
     }
@@ -155,7 +156,7 @@ public class PathAnalyze {
         return null;
     }
 
-    public SimState doOne(Unit curUnit, SimState state, DirectedGraph<Unit> cfg, Boolean isFromReturn) {
+    public SimState doOne(Unit curUnit, SimState state, ExceptionalUnitGraph cfg, Boolean isFromReturn) {
         // handle return
         if (isFromReturn) {
             List<Unit> units = getNextUnit(curUnit, cfg);
@@ -295,7 +296,8 @@ public class PathAnalyze {
 
             } else if (curUnit instanceof JThrowStmt) {
                 // TODO TRY CATCH
-                // Log.error("[-] Unsupported ThrowStmt: " + curUnit);
+                //get body
+                
                 return state;
           } else if (curUnit instanceof JEnterMonitorStmt) {
             } else if (curUnit instanceof JExitMonitorStmt) {
@@ -334,9 +336,9 @@ public class PathAnalyze {
                 }
                 return state;
 
-            } else if (curUnit instanceof JIdentityStmt) {
-                Value right = ((IdentityStmt) curUnit).getRightOp();
-                Value left = ((IdentityStmt) curUnit).getLeftOp();
+            } else if (curUnit instanceof JIdentityStmt identityStmt) {
+                Value right = identityStmt.getRightOp();
+                Value left = identityStmt.getLeftOp();
                 if (right instanceof ParameterRef p) {
                     int paramIndex = p.getIndex();
                     Expr param = state.getParam(paramIndex);
@@ -460,6 +462,8 @@ public class PathAnalyze {
     public Expr handlePermissionAPI(InvokeExpr expr, SimState state) {
         List<Value> args = expr.getArgs();
         String methodName = expr.getMethod().getName();
+
+        //enforcePermission
         if (methodName.startsWith("enforce")) {
             String permissionValue;
             if (args.get(0) instanceof StringConstant strConstant) {
@@ -485,6 +489,8 @@ public class PathAnalyze {
             state.addConstraint(enforceExpr);
             return enforceExpr;
 
+
+        // checkPermission
         } else if (methodName.startsWith("check")) {
             String permissionValue;
             if (args.get(0) instanceof StringConstant) {

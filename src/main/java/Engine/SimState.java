@@ -1,12 +1,11 @@
 package Engine;
 
-import java.util.List;
-import java.util.Set;
 import com.microsoft.z3.Expr;
 import soot.jimple.*;
 import java.util.*;
 import soot.*;
 import soot.toolkits.graph.DirectedGraph;
+import soot.toolkits.graph.ExceptionalUnitGraph;
 import utils.Log;
 
 public class SimState {
@@ -14,7 +13,7 @@ public class SimState {
         public Map<Value, Expr> localMap;
         public List<Expr> constraints;
         public Stack<Unit> callStack;
-        public Stack<DirectedGraph<Unit>> cfgStack;
+        public Stack<ExceptionalUnitGraph> cfgStack;
         public List<List<Expr>> paramList;
         // public Map<SootClass,Map<Value,Expr>> staticMaps;
         public Map<String, Integer> instCount;
@@ -59,11 +58,11 @@ public class SimState {
             return this.callStack.isEmpty();
         }
 
-        public void pushCFG(DirectedGraph<Unit> cfg) {
+        public void pushCFG(ExceptionalUnitGraph cfg) {
             this.cfgStack.push(cfg);
         }
 
-        public DirectedGraph<Unit> popCFG() {
+        public ExceptionalUnitGraph popCFG() {
             return this.cfgStack.pop();
         }
 

@@ -333,10 +333,9 @@ public class Main {
     public static void main(String[] args) {
 
         init();
-        multi2();
-        // testOneBySign("com.android.phone.PhoneInterfaceManager","java.lang.String sendEnvelopeWithStatus(int,java.lang.String)");
         // multi2();
-
+        testOneBySign("com.android.phone.PhoneInterfaceManager","void enforceFineOrCoarseLocationPermission(java.lang.String)");
+  
 
     }
 
