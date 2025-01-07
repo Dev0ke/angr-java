@@ -16,11 +16,9 @@ import soot.*;
 import soot.jimple.*;
 import soot.jimple.internal.*;
 import soot.jimple.toolkits.ide.icfg.OnTheFlyJimpleBasedICFG;
-import soot.tagkit.Tag;
-import soot.toolkits.graph.DirectedGraph;
 import soot.toolkits.graph.ExceptionalBlockGraph;
 import soot.toolkits.graph.ExceptionalUnitGraph;
-import soot.util.Chain;
+
 import utils.Log;
 
 import java.util.*;
@@ -103,9 +101,6 @@ public class PathAnalyze {
         return initState;
     }
 
-    public Expr makePermissionSymbol(String permissionValue) {
-        return this.z3Ctx.mkBVConst(permissionValue, 32);
-    }
 
     public void startAnalyze() {
         // g.displayGraph();
@@ -113,7 +108,10 @@ public class PathAnalyze {
         this.enableSolve = true;
 
         //symbolize params
-        makeParamsSymbol(this.entryMethod, initState);
+        if(Config.enableParamSymbolize){
+            makeParamsSymbol(this.entryMethod, initState);
+        }
+
         // return;
         analyzeMethod(this.entryMethod, initState);
         printTime("[+] PathAnalyze Finished! ", this.startTime);
@@ -122,11 +120,29 @@ public class PathAnalyze {
 
     public SimState analyzeMethod(SootMethod m, SimState state) {
         Log.info("[+] Analyzing method: " + m.getName());
-        ExceptionalUnitGraph cfg = (ExceptionalUnitGraph) new OnTheFlyJimpleBasedICFG(m).getOrCreateUnitGraph(m);
+        OnTheFlyJimpleBasedICFG icfg = new OnTheFlyJimpleBasedICFG(m);
+        Body body = m.retrieveActiveBody();
+        ExceptionalUnitGraph cfg = new ExceptionalUnitGraph(body);
+
         Unit entryPoint = cfg.getHeads().get(0);
         return doOne(entryPoint, state, cfg, false);
     }
-
+    public Unit getExceptionHandler(Unit curUnit, ExceptionalUnitGraph cfg, SimState state){
+        List<Unit> exceptionHandler = cfg.getExceptionalSuccsOf(curUnit);
+        if(exceptionHandler.size() == 1)
+            return exceptionHandler.get(0);
+        //recursive find exception handler
+        else{ 
+            while(!state.isCallStackEmpty()){
+                Unit lastCallUnit = state.popCall();
+                exceptionHandler = cfg.getExceptionalSuccsOf(lastCallUnit);
+                if(exceptionHandler.size() == 1){
+                    return exceptionHandler.get(0);
+                }
+            }
+        }
+        return null;
+    }
 
     public Expr handleCastExpr(Context z3Ctx,JCastExpr castExpr, SimState state){
         Expr src = valueToExpr(castExpr.getOp(),state);
@@ -210,7 +226,6 @@ public class PathAnalyze {
                 }
 
             } else if (curUnit instanceof JAssignStmt assignStmt) {
-
                 Value left = assignStmt.getLeftOp();
                 Value right = assignStmt.getRightOp();
                 Expr v = null;
@@ -233,10 +248,10 @@ public class PathAnalyze {
                     } else {
                         Log.error("[-] Unsupported right type: " + right.getClass());
                     }
-                } else if (right instanceof InvokeExpr invoke) {
+                } else if (right instanceof InvokeExpr) {
                     state.pushCall(curUnit);
                     state.pushCFG(cfg);
-                    SimState rtnValue = handleInvoke(invoke, state);
+                    SimState rtnValue = handleInvoke(curUnit, state);
                     return state;
                     // TODO ADD INSTANCE FIELD REF
                 } else {
@@ -286,10 +301,12 @@ public class PathAnalyze {
                     doOne(defaultTarget, branchState, cfg, false);
                 return state;
 
-            } else if (curUnit instanceof InvokeStmt invokeStmt) {
+            } else if (curUnit instanceof  JInvokeStmt) {
+                List<Unit> exceptionalSuccs = cfg.getExceptionalSuccsOf(curUnit);
+
                 state.pushCall(curUnit);
                 state.pushCFG(cfg);
-                handleInvoke(invokeStmt, state);
+                handleInvoke(curUnit, state);
                 return state;
 
             } else if (curUnit instanceof JThrowStmt) {
@@ -360,13 +377,6 @@ public class PathAnalyze {
             } else {
                 List<Unit> nextUnits =cfg.getUnexceptionalSuccsOf(curUnit);
                 for (Unit u : nextUnits) {
-                    if (u instanceof JIdentityStmt id) {
-                        Value right = id.getRightOp();
-                        // ignore the exception
-                        // TODO FIX
-                        if (right instanceof JCaughtExceptionRef)
-                            continue;
-                    }
                     doOne(u, state, cfg, false);
                 }
                 return state;
@@ -375,166 +385,29 @@ public class PathAnalyze {
         return state;
     }
 
-    // TODO add uid limit
-    public Expr handleUidAPI(InvokeExpr expr, SimState state) {
-        List<Value> args = expr.getArgs();
-        String methodName = expr.getMethod().getName();
-        if (methodName.equals("getCallingUid")) {
-            String symbolName = "TYPE_UID#CallingUid";
-            Expr uidExpr = state.getSymbolByName(symbolName);
-            if (uidExpr == null) {
-                uidExpr = z3Ctx.mkBVConst(symbolName, 32);
-                state.addSymbol(uidExpr);
+
+    public SimState handleInvoke(Unit curUnit, SimState state) {
+        // get invoke expr
+        InvokeExpr expr = null;
+        if(curUnit instanceof JInvokeStmt invokeStmt){
+            expr = invokeStmt.getInvokeExpr();
+        } else if(curUnit instanceof JIdentityStmt identityStmt){
+            Value right = identityStmt.getRightOp();
+            if(right instanceof InvokeExpr invokeExpr){
+                expr = invokeExpr;
             }
-            return uidExpr;
+        } else {
+            Log.error("[-] Unsupported Invoke Stmt: " + curUnit.getClass());
         }
-        return null;
-    }
 
-    // TODO add uid limit
-    public Expr handlePidAPI(InvokeExpr expr, SimState state) {
-        List<Value> args = expr.getArgs();
-        String methodName = expr.getMethod().getName();
-        if (methodName.equals("getCallingPid")) {
-            String symbolName = "TYPE_PID#CallingPid";
-            Expr pidExpr = state.getSymbolByName(symbolName);
-            if (pidExpr == null) {
-                pidExpr = z3Ctx.mkBVConst(symbolName, 32);
-                state.addSymbol(pidExpr);
-            }
-            return pidExpr;
-        }
-        return null;
-    }
-
-    public Expr handleMyPidAPI(InvokeExpr expr, SimState state) {
-        String symbolName = "TYPE_PID#MY_PID";
-        Expr pidExpr = state.getSymbolByName(symbolName);
-        if (pidExpr == null) {
-            pidExpr = z3Ctx.mkBVConst(symbolName, 32);
-            state.addSymbol(pidExpr);
-        }
-        return pidExpr;
-
-    }
-
-    public Expr handleAppOpAPI(InvokeExpr expr, SimState state) {
-        List<Value> args = expr.getArgs();
-        String methodName = expr.getMethod().getName();
-        if (CheckAppOpAPI.getAllMethodNameByClassName("android.app.AppOpsManager").contains(methodName)
-                || methodName.equals("noteOp") || methodName.equals("checkOp")) {
-            // get APPOP STR
-            String appOPSTR;
-            if (args.get(0) instanceof StringConstant)
-                appOPSTR = ((StringConstant) args.get(0)).value;
-            // TODO FIX APPOP 2 OPSTR
-            else if (args.get(0) instanceof IntConstant)
-                appOPSTR = String.valueOf(((IntConstant) args.get(0)).value);
-            else if (args.get(0) instanceof Local) {
-                Value permission = args.get(0);
-                Expr permissionExpr = state.getExpr(permission);
-                appOPSTR = permissionExpr.toString();
-            } else {
-                Log.error("[-] Unsupported APPOP type: " + args.get(0).getClass());
-                return null;
-            }
-            String symbolName = "TYPE_AppOp#" + appOPSTR;
-
-            // create or get Expr
-            Expr AppOpExpr = state.getSymbolByName(symbolName);
-            if (AppOpExpr == null) {
-                AppOpExpr = z3Ctx.mkBVConst(symbolName, 32);
-                state.addSymbol(AppOpExpr);
-            }
-
-            // add Constraint for possible results
-            List<Expr> possbileValueConstraints = new ArrayList<>();
-            for (int i : CheckAppOpAPI.POSSIBLE_APPOP_CHECK_RESULTS) {
-                possbileValueConstraints.add(z3Ctx.mkEq(AppOpExpr, z3Ctx.mkBV(i, 32)));
-            }
-            state.addConstraint(z3Ctx.mkEq(z3Ctx.mkOr(possbileValueConstraints.toArray(new Expr[0])), z3Ctx.mkTrue()));
-            return AppOpExpr;
-        }
-        return null;
-    }
-
-    public Expr handlePermissionAPI(InvokeExpr expr, SimState state) {
-        List<Value> args = expr.getArgs();
-        String methodName = expr.getMethod().getName();
-
-        //enforcePermission
-        if (methodName.startsWith("enforce")) {
-            String permissionValue;
-            if (args.get(0) instanceof StringConstant strConstant) {
-                // add permission symbol
-                permissionValue = strConstant.value;
-            } else if (args.get(0) instanceof Local) {
-                Value permission = args.get(0);
-                Expr permissionExpr = state.getExpr(permission);
-                permissionValue = permissionExpr.getString();
-            } else {
-                Log.error("[-] Unsupported permission type: " + args.get(0).getClass());
-                return null;
-            }
-
-            // create or get Expr
-            String permissionSymbolName = "TYPE_PERMISSION#" + permissionValue;
-            Expr permissionExpr = state.getSymbolByName(permissionSymbolName);
-            if (permissionExpr == null) {
-                permissionExpr = makePermissionSymbol(permissionSymbolName);
-                state.addSymbol(permissionExpr);
-            }
-            Expr enforceExpr = z3Ctx.mkEq(permissionExpr, z3Ctx.mkBV(PERMISSION_GRANTED, 32));
-            state.addConstraint(enforceExpr);
-            return enforceExpr;
-
-
-        // checkPermission
-        } else if (methodName.startsWith("check")) {
-            String permissionValue;
-            if (args.get(0) instanceof StringConstant) {
-                // add permission symbol
-                permissionValue = ((StringConstant) args.get(0)).value;
-            } else if (args.get(0) instanceof Local) {
-                Value permission = args.get(0);
-                Expr permissionExpr = state.getExpr(permission);
-                permissionValue = permissionExpr.getString();
-            } else {
-                Log.error("[-] Unsupported permission type: " + args.get(0).getClass());
-                return null;
-            }
-
-            // create or get Expr
-            String permissionSymbolName = "TYPE_PERMISSION#" + permissionValue;
-            Expr permissionExpr = state.getSymbolByName(permissionSymbolName);
-            if (permissionExpr == null) {
-                permissionExpr = makePermissionSymbol(permissionSymbolName);
-                state.addSymbol(permissionExpr);
-            }
-
-            // add Constraint for possible results
-            List<Expr> possbileValueConstraints = new ArrayList<>();
-            for (int i : CheckPermissionAPI.POSSIBLE_PERMISSIONS_CHECK_RESULTS_OLD) {
-                possbileValueConstraints.add(z3Ctx.mkEq(permissionExpr, z3Ctx.mkBV(i, 32)));
-            }
-            state.addConstraint(z3Ctx.mkEq(z3Ctx.mkOr(possbileValueConstraints.toArray(new Expr[0])), z3Ctx.mkTrue()));
-            return permissionExpr;
-        }
-        return null;
-    }
-
-    public SimState handleInvoke(InvokeStmt stmt, SimState state) {
-        return handleInvoke(stmt.getInvokeExpr(), state);
-    }
-
-    public SimState handleInvoke(InvokeExpr expr, SimState state) {
+        // get callee method and Name
         SootMethod callee = expr.getMethod();
         String methodName = callee.getName();
         String className = callee.getDeclaringClass().getName();
 
         if (CheckPermissionAPI.allClassNames.contains(className)) {
             Log.warn("[+] Find Permission API: " + className + "." + methodName);
-            Expr e = handlePermissionAPI(expr, state);
+            Expr e = HookSymbol.handlePermissionAPI(expr, state, this.z3Ctx);
             if (e != null) {
                 Unit ret = state.popCall();
                 if (ret instanceof AssignStmt assign) {
@@ -543,8 +416,22 @@ public class PathAnalyze {
                 } else {
                     Log.error("[-] Unsupported Ret Unit type: " + ret.getClass());
                 }
+                ExceptionalUnitGraph cfg = state.popCFG();
+                doOne(ret, state, cfg, true);
+                
+                //spceial case for enforce
+                if(methodName.startsWith("enforce")){
+                    Unit exceptionHandler = getExceptionHandler(curUnit, cfg, state);
+                    if(exceptionHandler != null){
+                        SimState throwState = state.copy();
+                        throwState.popConstraint();
+                        Expr permissionExpr = throwState.getLastSymbol();
+                        Expr permissionValue = this.z3Ctx.mkEq(permissionExpr, z3Ctx.mkBV(CheckPermissionAPI.PERMISSION_SOFT_DENIED, 32));
+                        throwState.addConstraint(permissionValue);
+                        doOne(exceptionHandler, throwState, cfg, false);
+                    }
+                }
 
-                doOne(ret, state, state.popCFG(), true);
                 return null;
             }
         }
@@ -596,7 +483,7 @@ public class PathAnalyze {
             Log.info("[-] Exception invoke. Terminate. ");
             return null;
         } else if (className.equals("android.os.Process") && methodName.equals("myPid")) {
-            Expr e = handleMyPidAPI(expr, state);
+            Expr e = HookSymbol.handleMyPidAPI(expr, state, this.z3Ctx);
             if (e != null) {
                 Unit ret = state.popCall();
                 if (ret instanceof AssignStmt assign) {
@@ -628,7 +515,6 @@ public class PathAnalyze {
 
     // pass the parameters to the callee
     public void preInvoke(InvokeExpr expr, SimState state) {
-
         // handle param
         List<Value> args = expr.getArgs();
         List<Expr> params = new ArrayList<>();

@@ -9,7 +9,7 @@ import soot.toolkits.graph.ExceptionalUnitGraph;
 import utils.Log;
 
 public class SimState {
-        public Set<Expr> symbol;
+        public List<Expr> symbol;
         public Map<Value, Expr> localMap;
         public List<Expr> constraints;
         public Stack<Unit> callStack;
@@ -23,7 +23,7 @@ public class SimState {
         public SimState() {
             this.localMap = new HashMap<>();
             this.constraints = new ArrayList<Expr>();
-            this.symbol = new HashSet<>();
+            this.symbol = new ArrayList<>();
             this.callStack = new Stack<>();
             this.cfgStack = new Stack<>();
             this.paramList = new ArrayList<>();
@@ -111,6 +111,10 @@ public class SimState {
         public void addConstraint(Expr c) {
             this.constraints.add(c);
         }
+        public Expr popConstraint() {
+            return this.constraints.remove(this.constraints.size() - 1);
+        }
+
 
         public void addSymbol(Expr s) {
             this.symbol.add(s);
@@ -123,6 +127,10 @@ public class SimState {
                 }
             }
             return null;
+        }
+
+        public Expr getLastSymbol() {
+            return this.symbol.get(this.symbol.size() - 1);
         }
 
         public void addStaticField(StaticFieldRef s, Expr e) {
@@ -179,6 +187,13 @@ public class SimState {
         public void clear() {
             this.localMap.clear();
             this.constraints.clear();
+            this.symbol.clear();
+            this.callStack.clear();
+            this.cfgStack.clear();
+            this.paramList.clear();
+            this.instCount.clear();
+            this.staticFieldMap.clear();
+            this.saveLocalMaps.clear();
         }
 
 }

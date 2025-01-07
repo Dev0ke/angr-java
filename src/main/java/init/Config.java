@@ -9,6 +9,7 @@ public class Config {
     // Analysis Config
     public static boolean enableLazySolve = false;
     public static boolean enableInterAnalysis = true;
+    public static boolean enableParamSymbolize = true;
     public static int branchLimit = 4;
     public static int timeout = 3000000;
 
