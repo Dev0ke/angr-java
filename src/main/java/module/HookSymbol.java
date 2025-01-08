@@ -3,17 +3,16 @@ package module;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.microsoft.z3.BitVecNum;
 import com.microsoft.z3.Context;
 import com.microsoft.z3.Expr;
+import com.microsoft.z3.SeqExpr;
 
 import Engine.SimState;
 import accessControl.CheckAppOpAPI;
 import accessControl.CheckPermissionAPI;
-import soot.Local;
-import soot.Value;
-import soot.jimple.IntConstant;
+
 import soot.jimple.InvokeExpr;
-import soot.jimple.StringConstant;
 import utils.Log;
 
 import static accessControl.CheckPermissionAPI.*;
@@ -21,7 +20,6 @@ import static accessControl.CheckPermissionAPI.*;
 public class HookSymbol {
     // TODO add uid limit
     public static Expr handleUidAPI(InvokeExpr expr, SimState state, Context z3Ctx) {
-        List<Value> args = expr.getArgs();
         String methodName = expr.getMethod().getName();
         if (methodName.equals("getCallingUid")) {
             String symbolName = "TYPE_UID#CallingUid";
@@ -37,7 +35,6 @@ public class HookSymbol {
 
     // TODO add uid limit
     public static Expr handlePidAPI(InvokeExpr expr, SimState state, Context z3Ctx) {
-        List<Value> args = expr.getArgs();
         String methodName = expr.getMethod().getName();
         if (methodName.equals("getCallingPid")) {
             String symbolName = "TYPE_PID#CallingPid";
@@ -63,23 +60,18 @@ public class HookSymbol {
     }
 
     public static Expr handleAppOpAPI(InvokeExpr expr, SimState state, Context z3Ctx) {
-        List<Value> args = expr.getArgs();
+        List<Expr> params = state.getLastParam();
         String methodName = expr.getMethod().getName();
         if (CheckAppOpAPI.getAllMethodNameByClassName("android.app.AppOpsManager").contains(methodName)
                 || methodName.equals("noteOp") || methodName.equals("checkOp")) {
             // get APPOP STR
             String appOPSTR;
-            if (args.get(0) instanceof StringConstant)
-                appOPSTR = ((StringConstant) args.get(0)).value;
-            // TODO FIX APPOP 2 OPSTR
-            else if (args.get(0) instanceof IntConstant)
-                appOPSTR = String.valueOf(((IntConstant) args.get(0)).value);
-            else if (args.get(0) instanceof Local) {
-                Value permission = args.get(0);
-                Expr permissionExpr = state.getExpr(permission);
-                appOPSTR = permissionExpr.toString();
+            if (params.get(0) instanceof SeqExpr seqParam){
+                appOPSTR = seqParam.getString();
+            } else if (params.get(0) instanceof BitVecNum bitVecParam){
+                appOPSTR = String.valueOf(bitVecParam.getLong());
             } else {
-                Log.error("[-] Unsupported APPOP type: " + args.get(0).getClass());
+                Log.error("Unsupported APPOP type: " + params.get(0).getClass());
                 return null;
             }
             String symbolName = "TYPE_AppOp#" + appOPSTR;
@@ -103,21 +95,16 @@ public class HookSymbol {
     }
 
     public static Expr handlePermissionAPI(InvokeExpr expr, SimState state, Context z3Ctx) {
-        List<Value> args = expr.getArgs();
+        List<Expr> params = state.getLastParam();
         String methodName = expr.getMethod().getName();
 
         //enforcePermission
         if (methodName.startsWith("enforce")) {
             String permissionValue;
-            if (args.get(0) instanceof StringConstant strConstant) {
-                // add permission symbol
-                permissionValue = strConstant.value;
-            } else if (args.get(0) instanceof Local) {
-                Value permission = args.get(0);
-                Expr permissionExpr = state.getExpr(permission);
-                permissionValue = permissionExpr.getString();
+            if (params.get(0) instanceof SeqExpr seqParam) {
+                permissionValue = seqParam.getString();
             } else {
-                Log.error("[-] Unsupported permission type: " + args.get(0).getClass());
+                Log.error("Unsupported permission type: " + params.get(0).getClass());
                 return null;
             }
 
@@ -125,7 +112,7 @@ public class HookSymbol {
             String permissionSymbolName = "TYPE_PERMISSION#" + permissionValue;
             Expr permissionExpr = state.getSymbolByName(permissionSymbolName);
             if (permissionExpr == null) {
-                permissionExpr = z3Ctx.mkBVConst(permissionValue, 32);
+                permissionExpr = z3Ctx.mkBVConst(permissionSymbolName, 32);
                 state.addSymbol(permissionExpr);
             }
             Expr enforceExpr = z3Ctx.mkEq(permissionExpr, z3Ctx.mkBV(PERMISSION_GRANTED, 32));
@@ -136,23 +123,19 @@ public class HookSymbol {
         // checkPermission
         } else if (methodName.startsWith("check")) {
             String permissionValue;
-            if (args.get(0) instanceof StringConstant strConstant) {
-                // add permission symbol
-                permissionValue = strConstant.value;
-            } else if (args.get(0) instanceof Local) {
-                Value permission = args.get(0);
-                Expr permissionExpr = state.getExpr(permission);
-                permissionValue = permissionExpr.getString();
+            if (params.get(0) instanceof SeqExpr seqParam) {
+                permissionValue = seqParam.getString();
             } else {
-                Log.error("[-] Unsupported permission type: " + args.get(0).getClass());
+                Log.error("Unsupported permission type: " + params.get(0).getClass());
                 return null;
             }
+
 
             // create or get Expr
             String permissionSymbolName = "TYPE_PERMISSION#" + permissionValue;
             Expr permissionExpr = state.getSymbolByName(permissionSymbolName);
             if (permissionExpr == null) {
-                permissionExpr = z3Ctx.mkBVConst(permissionValue, 32);
+                permissionExpr = z3Ctx.mkBVConst(permissionSymbolName, 32);
                 state.addSymbol(permissionExpr);
             }
 

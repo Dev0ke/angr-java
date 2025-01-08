@@ -5,11 +5,11 @@ public class Config {
     // Basic Config
     public static int threads = 256;
     public static boolean useExistJimple = true;
-    public static String logLevel = "INFO";
+    public static String logLevel = "ERROR";
     // Analysis Config
     public static boolean enableLazySolve = false;
     public static boolean enableInterAnalysis = true;
-    public static boolean enableParamSymbolize = true;
+    public static boolean enableParamSymbolize = false;
     public static int branchLimit = 4;
     public static int timeout = 3000000;
 

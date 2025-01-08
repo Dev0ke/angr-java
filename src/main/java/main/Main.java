@@ -331,11 +331,11 @@ public class Main {
     }
 
     public static void main(String[] args) {
-
         init();
         // multi2();
-        testOneBySign("com.android.phone.PhoneInterfaceManager","void enforceFineOrCoarseLocationPermission(java.lang.String)");
-  
+        // testOneBySign("com.android.phone.PhoneInterfaceManager","java.util.List getNeighboringCellInfo(java.lang.String)"); //double enforce
+        testOneBySign("com.android.server.devicepolicy.DevicePolicyManagerService","void setPasswordMinimumSymbols(android.content.ComponentName,int,boolean)");
+        // testOneBySign("com.android.server.audio.AudioService", "void startBluetoothSco(android.os.IBinder,int)");
 
     }
 

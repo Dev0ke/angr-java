@@ -10,18 +10,22 @@ import utils.Log;
 
 public class SimState {
         public List<Expr> symbol;
-        public Map<Value, Expr> localMap;
+        public Map<Value, Expr> curLocalMap;
+        public ExceptionalUnitGraph curCFG;
         public List<Expr> constraints;
-        public Stack<Unit> callStack;
-        public Stack<ExceptionalUnitGraph> cfgStack;
-        public List<List<Expr>> paramList;
-        // public Map<SootClass,Map<Value,Expr>> staticMaps;
+
+
         public Map<String, Integer> instCount;
         public Map<String, Expr> staticFieldMap;
+
+        // stack
+        public List<List<Expr>> paramList;
+        public Stack<Unit> callStack;
         public Stack<Map<Value, Expr>> saveLocalMaps;
+        public Stack<ExceptionalUnitGraph> cfgStack;
 
         public SimState() {
-            this.localMap = new HashMap<>();
+            this.curLocalMap = new HashMap<>();
             this.constraints = new ArrayList<Expr>();
             this.symbol = new ArrayList<>();
             this.callStack = new Stack<>();
@@ -30,6 +34,7 @@ public class SimState {
             this.instCount = new HashMap<>();
             this.staticFieldMap = new HashMap<>();
             this.saveLocalMaps = new Stack<>();
+            this.curCFG = null;
         }
 
         // TODO FIX HASH COLLISION
@@ -46,6 +51,7 @@ public class SimState {
             return count;
         }
 
+        
         public void pushCall(Unit u) {
             this.callStack.push(u);
         }
@@ -58,12 +64,23 @@ public class SimState {
             return this.callStack.isEmpty();
         }
 
-        public void pushCFG(ExceptionalUnitGraph cfg) {
-            this.cfgStack.push(cfg);
+
+        public ExceptionalUnitGraph getCurCFG(){
+            return this.curCFG;
+        }
+
+        public void setCurCFG(ExceptionalUnitGraph cfg){
+            this.curCFG = cfg;
+        }
+
+        public void pushCFG() {
+            this.cfgStack.push(this.curCFG);
+            this.curCFG = null;
         }
 
         public ExceptionalUnitGraph popCFG() {
-            return this.cfgStack.pop();
+            this.curCFG = this.cfgStack.pop();
+            return this.curCFG;
         }
 
         public boolean isCFGstackEmpty() {
@@ -74,7 +91,7 @@ public class SimState {
             this.paramList.add(params);
         }
 
-        public List<Expr> getParam() {
+        public List<Expr> getLastParam() {
             return this.paramList.get(this.paramList.size() - 1);
         }
 
@@ -86,6 +103,8 @@ public class SimState {
                 return exprs.get(index);
             return null;
         }
+        
+ 
 
         public void popParam() {
             this.paramList.remove(this.paramList.size() - 1);
@@ -96,14 +115,14 @@ public class SimState {
         }
 
         public void pushLocalMap() {
-            this.saveLocalMaps.push(this.localMap);
-            this.localMap = new HashMap<>();
+            this.saveLocalMaps.push(this.curLocalMap);
+            this.curLocalMap = new HashMap<>();
         }
 
         public void popLocalMap() {
-            this.localMap = this.saveLocalMaps.pop();
-            if (this.localMap == null) {
-                this.localMap = new HashMap<>();
+            this.curLocalMap = this.saveLocalMaps.pop();
+            if (this.curLocalMap == null) {
+                this.curLocalMap = new HashMap<>();
                 Log.error("[-] LocalMap is null");
             }
         }
@@ -146,15 +165,15 @@ public class SimState {
         }
 
         public void removeLocal(Value l) {
-            this.localMap.remove(l);
+            this.curLocalMap.remove(l);
         }
 
         public void removeAllLocal() {
-            this.localMap.clear();
+            this.curLocalMap.clear();
         }
 
         public Expr getExpr(Value l) {
-            Expr r = (Expr) this.localMap.get(l);
+            Expr r = (Expr) this.curLocalMap.get(l);
             return r;
         }
 
@@ -162,20 +181,24 @@ public class SimState {
             if (e == null) {
                 throw new IllegalArgumentException("Not valid");
             }
-            this.localMap.put(l, e);
+            this.curLocalMap.put(l, e);
         }
 
         // TODO 处理深拷贝
         public void copyTo(SimState dest) {
-            dest.localMap.putAll(this.localMap);
+            dest.curCFG = this.curCFG;    
+            dest.curLocalMap.putAll(this.curLocalMap);
             dest.constraints.addAll(this.constraints);
             dest.symbol.addAll(this.symbol);
-            dest.callStack.addAll(this.callStack);
-            dest.cfgStack.addAll(this.cfgStack);
-            dest.paramList.addAll(this.paramList);
+
             dest.instCount.putAll(this.instCount);
             dest.staticFieldMap.putAll(this.staticFieldMap);
+
+            // stack
+            dest.callStack.addAll(this.callStack);
+            dest.paramList.addAll(this.paramList);
             dest.saveLocalMaps.addAll(this.saveLocalMaps);
+            dest.cfgStack.addAll(this.cfgStack);
         }
 
         public SimState copy() {
@@ -185,7 +208,7 @@ public class SimState {
         }
 
         public void clear() {
-            this.localMap.clear();
+            this.curLocalMap.clear();
             this.constraints.clear();
             this.symbol.clear();
             this.callStack.clear();

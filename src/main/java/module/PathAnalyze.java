@@ -18,27 +18,22 @@ import soot.jimple.internal.*;
 import soot.jimple.toolkits.ide.icfg.OnTheFlyJimpleBasedICFG;
 import soot.toolkits.graph.ExceptionalBlockGraph;
 import soot.toolkits.graph.ExceptionalUnitGraph;
-
+import soot.util.Chain;
 import utils.Log;
 
 import java.util.*;
 
-
-import static accessControl.CheckPermissionAPI.PERMISSION_GRANTED;
 import static init.Config.enableInterAnalysis;
 import static init.Config.enableLazySolve;
-import static utils.Log.printTime;
 
 public class PathAnalyze {
     public SootMethod entryMethod;
     public Context z3Ctx;
-    public long startTime;
     public boolean enableSolve;
     public List<List<String>> analyzeResult;
     public HashSet<SootMethod> CheckMethods;
 
     public PathAnalyze(SootMethod entryMethod,HashSet<SootMethod> CheckMethods) {
-        this.startTime = System.currentTimeMillis();
         this.CheckMethods = CheckMethods;
         this.entryMethod = entryMethod;
         this.analyzeResult = new ArrayList<>();
@@ -87,7 +82,7 @@ public class PathAnalyze {
         else if(v instanceof StaticFieldRef staticRef)
             state.addStaticField(staticRef, e);
         else
-            Log.error("[-] Unsupported value type: " + v.getClass());
+            Log.error("Unsupported value type: " + v.getClass());
     }
 
     public SimState handleInitMethod() {
@@ -96,7 +91,7 @@ public class PathAnalyze {
         // has <clinit>?
         SootMethod clinitMethod = sc.getMethodByNameUnsafe("<clinit>");
         if (clinitMethod != null) {
-            return analyzeMethod(clinitMethod, initState);
+            analyzeMethod(clinitMethod, initState);
         }
         return initState;
     }
@@ -114,35 +109,84 @@ public class PathAnalyze {
 
         // return;
         analyzeMethod(this.entryMethod, initState);
-        printTime("[+] PathAnalyze Finished! ", this.startTime);
-
     }
 
-    public SimState analyzeMethod(SootMethod m, SimState state) {
-        Log.info("[+] Analyzing method: " + m.getName());
+    public void analyzeMethod(SootMethod m, SimState state) {
+        Log.warn("[+] Analyzing method: " + m.getDeclaringClass().getName() + "." + m.getName());
         OnTheFlyJimpleBasedICFG icfg = new OnTheFlyJimpleBasedICFG(m);
         Body body = m.retrieveActiveBody();
         ExceptionalUnitGraph cfg = new ExceptionalUnitGraph(body);
-
+        state.setCurCFG(cfg);
         Unit entryPoint = cfg.getHeads().get(0);
-        return doOne(entryPoint, state, cfg, false);
+
+        doOne(entryPoint, state, false);
+        return;
     }
-    public Unit getExceptionHandler(Unit curUnit, ExceptionalUnitGraph cfg, SimState state){
-        List<Unit> exceptionHandler = cfg.getExceptionalSuccsOf(curUnit);
-        if(exceptionHandler.size() == 1)
-            return exceptionHandler.get(0);
-        //recursive find exception handler
-        else{ 
-            while(!state.isCallStackEmpty()){
-                Unit lastCallUnit = state.popCall();
-                exceptionHandler = cfg.getExceptionalSuccsOf(lastCallUnit);
-                if(exceptionHandler.size() == 1){
-                    return exceptionHandler.get(0);
+
+    // TODO HANDLE MULTIPLE EXCEPTION HANDLER
+    // public Unit getExceptionHandler(Unit curUnit, SimState state){ 
+    //     Log.warn("Get Exception Handler");
+    //     while(!state.isCallStackEmpty()){
+    //         Unit lastCallUnit = postInvoke(state);
+    //         ExceptionalUnitGraph lastcfg = state.getCurCFG();
+    //         lastcfg.getBody().getTraps();
+    //         List<Unit> exceptionHandler = lastcfg.getExceptionalSuccsOf(lastCallUnit);
+    //         if(exceptionHandler.size() == 1){
+    //             return exceptionHandler.get(0);
+    //         }
+    //     }
+    //     return null;
+    // }
+
+
+
+    public Unit getExceptionHandler(Unit curUnit, SimState state, RefType exceptionType) {
+        Log.warn("Get Exception Handler for exception type: " + exceptionType);
+        
+        while (!state.isCallStackEmpty()) {
+            Unit lastCallUnit = postInvoke(state);
+            ExceptionalUnitGraph lastcfg = state.getCurCFG();
+            
+            // 获取所有异常处理器
+            List<Unit> exceptionHandlers = lastcfg.getExceptionalSuccsOf(lastCallUnit);
+            
+            if (exceptionHandlers.isEmpty()) {
+                continue; // 如果没有异常处理器，继续检查调用栈的下一个单元
+            }
+            
+            // 获取特定异常类型的处理器
+            Chain<Trap> traps = lastcfg.getBody().getTraps();
+            for (Trap trap : traps) {
+                // 检查该trap是否覆盖当前单元
+                if (trap.getBeginUnit().equals(lastCallUnit) || 
+                    lastcfg.getSuccsOf(trap.getBeginUnit()).contains(lastCallUnit)) {
+                    
+                    // 检查异常类型是否匹配
+                    RefType trapException = trap.getException().getType();
+                    if (exceptionType.equals(trapException) || 
+                        Scene.v().getActiveHierarchy().isClassSubclassOf(
+                            exceptionType.getSootClass(), 
+                            trapException.getSootClass())) {
+                        
+                        return trap.getHandlerUnit();
+                    }
+                }
+            }
+            
+            // 如果没有找到具体异常类型的处理器，但有通用处理器（catch all）
+            for (Trap trap : traps) {
+                if (trap.getException().getType().equals(
+                    Scene.v().getType("java.lang.Throwable"))) {
+                    return trap.getHandlerUnit();
                 }
             }
         }
+        
+        Log.warn("No handler found for exception type: " + exceptionType);
         return null;
     }
+
+
 
     public Expr handleCastExpr(Context z3Ctx,JCastExpr castExpr, SimState state){
         Expr src = valueToExpr(castExpr.getOp(),state);
@@ -170,58 +214,58 @@ public class PathAnalyze {
         return null;
     }
 
-    public SimState doOne(Unit curUnit, SimState state, ExceptionalUnitGraph cfg, Boolean isFromReturn) {
+    public void doOne(Unit curUnit, SimState state, Boolean isFromReturn) {
+        ExceptionalUnitGraph cfg = state.getCurCFG();
+    
         // handle return
         if (isFromReturn) {
             List<Unit> units = cfg.getUnexceptionalSuccsOf(curUnit);
             for (Unit u : units) {
-                doOne(u, state, cfg, false);
+                doOne(u, state, false);
             }
-            return state;
+            return;
         }
 
         while (curUnit != null) {
             Log.info(curUnit.toString());
-            
             if (curUnit instanceof JIfStmt ifStmt) {
                 Value condition = ifStmt.getCondition();
                 Expr result = handleCalculate(condition, state);
                 // copy current state
                 SimState branchState = state.copy();
-                Unit target = ifStmt.getTarget();
+                Unit branch1 = ifStmt.getTarget();
+                Unit branch2 = cfg.getUnexceptionalSuccsOf(curUnit).get(0);
                 if (result != null) {
                     // condition is true
                     Log.info("|- IfStmt 1, condition TRUE: " + condition);
                     branchState.addConstraint(result);
                     if (branchState.addInstCount(curUnit) <= Config.branchLimit
                             && (enableLazySolve || SymbolSolver.solveConstraintsSingle(this.z3Ctx,branchState.constraints))) {
-                        doOne(target, branchState, cfg, false);
+                        doOne(branch1, branchState, false);
 
                     } else
-                        Log.info("[-] unsat branch");
+                        Log.info("unsat branch");
 
                     // condition is false
                     Log.info("|- IfStmt 2, condition FALSE: !" + condition);
                     state.addConstraint(this.z3Ctx.mkNot(result));
                     if (state.addInstCount(curUnit) <= Config.branchLimit + 1
                             && (enableLazySolve || SymbolSolver.solveConstraintsSingle(this.z3Ctx,state.constraints))) {
-                        doOne(cfg.getUnexceptionalSuccsOf(curUnit).get(0), state, cfg, false);
+                        doOne(branch2, state,  false);
                     } else {
-                        Log.info("[-] unsat branch");
+                        Log.info("unsat branch");
                     }
-                    return state;
+                    return;
                 } else {
                     if (branchState.addInstCount(curUnit) <= Config.branchLimit) {
                         Log.info("|- IfStmt 1, condition TRUE: " + condition);
-                        doOne(target, branchState, cfg, false);
-
+                        doOne(branch1, branchState,  false);
                     }
                     if (state.addInstCount(curUnit) <= Config.branchLimit + 1) {
                         Log.info("|- IfStmt 2, condition FALSE: !" + condition);
-                        doOne(cfg.getUnexceptionalSuccsOf(curUnit).get(0), state, cfg, false);
-
+                        doOne(branch2, state, false);
                     }
-                    return state;
+                    return;
 
                 }
 
@@ -243,16 +287,15 @@ public class PathAnalyze {
                     v = handleCastExpr(this.z3Ctx,cast, state);
                 } else if (right instanceof JNewExpr newExpr) {
                     if (newExpr.getBaseType().toString().equals("java.lang.SecurityException")) {
-                        Log.info("[-] SecurityException branch. Terminate.");
-                        return state;
+                        Log.info("SecurityException branch. Terminate.");
+                        return;
                     } else {
-                        Log.error("[-] Unsupported right type: " + right.getClass());
+                        Log.error("Unsupported right type: " + right.getClass());
                     }
                 } else if (right instanceof InvokeExpr) {
-                    state.pushCall(curUnit);
-                    state.pushCFG(cfg);
-                    SimState rtnValue = handleInvoke(curUnit, state);
-                    return state;
+                    preInvoke(curUnit, state);
+                    handleInvoke(curUnit, state);
+                    return;
                     // TODO ADD INSTANCE FIELD REF
                 } else {
                     Log.error("Unsupported right type: " + right.getClass());
@@ -270,7 +313,7 @@ public class PathAnalyze {
 
             } else if (curUnit instanceof JLookupSwitchStmt switchStmt) {
                 Value key = switchStmt.getKey();
-                Expr exp = state.getExpr(key);
+                Expr expr = state.getExpr(key);
 
                 // handle switch case
                 List<IntConstant> caseValues = switchStmt.getLookupValues();
@@ -278,79 +321,74 @@ public class PathAnalyze {
                     Unit target = switchStmt.getTargetForValue(ii.value);
                     Expr v = z3Ctx.mkBV(ii.value, 32);
                     SimState branchState = state.copy();
-
-                    if (exp != null) {
-                        branchState.addConstraint(z3Ctx.mkEq(exp, v));
+                    if (expr != null) {
+                        branchState.addConstraint(z3Ctx.mkEq(expr, v));
                         if (enableLazySolve || SymbolSolver.solveConstraintsSingle(this.z3Ctx,state.constraints)) {
-                            doOne(target, branchState, cfg, false);
+                            doOne(target, branchState, false);
                         }
                     } else
-                        doOne(target, branchState, cfg, false);
+                        doOne(target, branchState,false);
                 }
 
                 // handle default case
                 Unit defaultTarget = switchStmt.getDefaultTarget();
                 SimState branchState = state.copy();
-                if (exp != null) {
+                if (expr != null) {
                     branchState.addConstraint(z3Ctx.mkNot(z3Ctx.mkOr(caseValues.stream()
-                            .map(ii -> z3Ctx.mkEq(exp, z3Ctx.mkBV(ii.value, 32))).toArray(Expr[]::new))));
+                            .map(ii -> z3Ctx.mkEq(expr, z3Ctx.mkBV(ii.value, 32))).toArray(Expr[]::new))));
                     if (enableLazySolve || SymbolSolver.solveConstraintsSingle(this.z3Ctx,state.constraints)) {
-                        doOne(defaultTarget, branchState, cfg, false);
+                        doOne(defaultTarget, branchState,false);
                     }
                 } else
-                    doOne(defaultTarget, branchState, cfg, false);
-                return state;
+                    doOne(defaultTarget, branchState,  false);
+                return;
 
             } else if (curUnit instanceof  JInvokeStmt) {
-                List<Unit> exceptionalSuccs = cfg.getExceptionalSuccsOf(curUnit);
-
-                state.pushCall(curUnit);
-                state.pushCFG(cfg);
+                preInvoke(curUnit, state);
                 handleInvoke(curUnit, state);
-                return state;
+                return;
 
             } else if (curUnit instanceof JThrowStmt) {
-                // TODO TRY CATCH
-                //get body
-                List<Unit> exceptionalSuccs = cfg.getExceptionalSuccsOf(curUnit);
-                        
-                return state;
-          } else if (curUnit instanceof JEnterMonitorStmt) {
-            } else if (curUnit instanceof JExitMonitorStmt) {
-            } else if (curUnit instanceof JReturnStmt) {
+                //TODO Handle other exception
+                return;
+          } else if(curUnit instanceof JCaughtExceptionRef) {
+            
+
+          }
+          
+          else if (curUnit instanceof JEnterMonitorStmt) {
+            /* DO NOTHING */
+          } else if (curUnit instanceof JExitMonitorStmt) {
+            /* DO NOTHING */
+          } else if (curUnit instanceof JReturnStmt returnStmt) {
                 if (state.isCallStackEmpty()) {
                     if (enableSolve)// Entry method
                         this.printSimplifyConstaints(state.constraints);
                 } else { // callee method
-                    Unit ret = state.popCall();
-                    if (ret instanceof AssignStmt assign) {
-                        Value left = assign.getLeftOp();
-                        Value retValue = ((ReturnStmt) curUnit).getOp();
-                        Expr retExpr = valueToExpr(retValue,state);
-                        state.popLocalMap();
+                    Value retValue = returnStmt.getOp();
+                    Expr retExpr = valueToExpr(retValue,state);
+                    Unit ret = postInvoke(state);
+                    if (ret instanceof AssignStmt assignStmt) {
+                        Value left = assignStmt.getLeftOp();
                         if (retExpr != null) {
                             updateValue(left, retExpr, state);
                         }
-                        state.popParam();
-                        
                     } else {
-                        Log.error("[-] Unsupported Ret Unit type: " + ret.getClass());
+                        Log.error("Unsupported Ret Unit type: " + ret.getClass());
                     }
-                    doOne(ret, state, state.popCFG(), true);
+                    doOne(ret, state, true);
                 }
-                return state;
+                return;
 
-            } else if (curUnit instanceof JReturnVoidStmt ) {
+            } else if (curUnit instanceof JReturnVoidStmt) {
                 if (state.isCallStackEmpty()) {
                     if (enableSolve)// Entry method
                         this.printSimplifyConstaints(state.constraints);
                 } else { // callee method
-                    Unit ret = state.popCall();
-                    state.popLocalMap();
-                    state.popParam();
-                    doOne(ret, state, state.popCFG(), true);
+                    Unit ret = postInvoke(state);
+                    doOne(ret, state, true);
                 }
-                return state;
+                return;
 
             } else if (curUnit instanceof JIdentityStmt identityStmt) {
                 Value right = identityStmt.getRightOp();
@@ -361,43 +399,48 @@ public class PathAnalyze {
                     if (param != null) {
                         updateValue(left, param, state);
                     }
-
                 } else {
-                    Log.error("|- [-] Unsupported right type: " + right.getClass());
+                    Log.error("Unsupported right type: " + right.getClass());
                 }
-            } else if (curUnit instanceof JGotoStmt) {
-                ;
+            } else if (curUnit instanceof JGotoStmt gotoStmt) {
+                Unit target = gotoStmt.getTarget();
+                doOne(target, state, false);
             } else {
                 Log.error("Unhandle Unit: " + curUnit + curUnit.getClass());
             }
             // end handle ,get next unit
             if (curUnit instanceof JGotoStmt gotoStmt) {
                 curUnit = gotoStmt.getTarget();
-
             } else {
-                List<Unit> nextUnits =cfg.getUnexceptionalSuccsOf(curUnit);
+                List<Unit> nextUnits = cfg.getUnexceptionalSuccsOf(curUnit);
                 for (Unit u : nextUnits) {
-                    doOne(u, state, cfg, false);
+                    doOne(u, state, false);
                 }
-                return state;
+                return;
             }
         }
-        return state;
+        return;
     }
 
 
-    public SimState handleInvoke(Unit curUnit, SimState state) {
+    public void handleInvoke(Unit curUnit, SimState state) {
         // get invoke expr
         InvokeExpr expr = null;
         if(curUnit instanceof JInvokeStmt invokeStmt){
             expr = invokeStmt.getInvokeExpr();
-        } else if(curUnit instanceof JIdentityStmt identityStmt){
-            Value right = identityStmt.getRightOp();
+        // } 
+        // else if(curUnit instanceof JIdentityStmt identityStmt){
+        //     Value right = identityStmt.getRightOp();
+        //     if(right instanceof InvokeExpr invokeExpr){
+        //         expr = invokeExpr;
+        // }
+        } else if(curUnit instanceof JAssignStmt assignStmt){
+            Value right = assignStmt.getRightOp();
             if(right instanceof InvokeExpr invokeExpr){
                 expr = invokeExpr;
             }
         } else {
-            Log.error("[-] Unsupported Invoke Stmt: " + curUnit.getClass());
+            Log.error("Unsupported Stmt: " + curUnit.getClass());
         }
 
         // get callee method and Name
@@ -405,34 +448,37 @@ public class PathAnalyze {
         String methodName = callee.getName();
         String className = callee.getDeclaringClass().getName();
 
+
+        //hook
         if (CheckPermissionAPI.allClassNames.contains(className)) {
-            Log.warn("[+] Find Permission API: " + className + "." + methodName);
+            Log.warn("[+] Handle Permission API: " + className + "." + methodName);
             Expr e = HookSymbol.handlePermissionAPI(expr, state, this.z3Ctx);
             if (e != null) {
-                Unit ret = state.popCall();
-                if (ret instanceof AssignStmt assign) {
-                    Value left = assign.getLeftOp();
-                    updateValue(left, e, state);
-                } else {
-                    Log.error("[-] Unsupported Ret Unit type: " + ret.getClass());
-                }
-                ExceptionalUnitGraph cfg = state.popCFG();
-                doOne(ret, state, cfg, true);
-                
                 //spceial case for enforce
+                //throw SecurityException
                 if(methodName.startsWith("enforce")){
-                    Unit exceptionHandler = getExceptionHandler(curUnit, cfg, state);
-                    if(exceptionHandler != null){
-                        SimState throwState = state.copy();
+                    SimState throwState = state.copy();
+                    Unit exceptionHandler = getExceptionHandler(curUnit, throwState, Scene.v().getRefType("java.lang.SecurityException"));
+                    if(exceptionHandler != null){ 
                         throwState.popConstraint();
                         Expr permissionExpr = throwState.getLastSymbol();
                         Expr permissionValue = this.z3Ctx.mkEq(permissionExpr, z3Ctx.mkBV(CheckPermissionAPI.PERMISSION_SOFT_DENIED, 32));
                         throwState.addConstraint(permissionValue);
-                        doOne(exceptionHandler, throwState, cfg, false);
+                        doOne(exceptionHandler, throwState, false);
                     }
                 }
 
-                return null;
+                Unit ret = postInvoke(state);
+                if (ret instanceof JAssignStmt assign) {
+                    Value left = assign.getLeftOp();
+                    updateValue(left, e, state);
+                } else if(ret instanceof JInvokeStmt ){
+                    // VOID invoke
+                } else {
+                    Log.error("Unsupported Ret Unit type: " + ret.getClass());
+                }
+                doOne(ret, state, true);
+                return;
             }
         }
         // } else if (CheckUidAPI.allClassNames.contains(className) && methodName.equals("getCallingUid")) {
@@ -444,7 +490,7 @@ public class PathAnalyze {
         //             Value left = assign.getLeftOp();
         //             updateValue(left, e, state);
         //         } else {
-        //             Log.error("[-] Unsupported Ret Unit type:  " + ret.getClass());
+        //             Log.error("Unsupported Ret Unit type:  " + ret.getClass());
         //         }
         //         doOne(ret, state, state.popCFG(), true);
         //         return null;
@@ -458,7 +504,7 @@ public class PathAnalyze {
         //             Value left = assign.getLeftOp();
         //             updateValue(left, e, state);
         //         } else {
-        //             Log.error("[-] Unsupported Ret Unit type: " + ret.getClass());
+        //             Log.error("Unsupported Ret Unit type: " + ret.getClass());
         //         }
         //         doOne(ret, state, state.popCFG(), true);
         //         return null;
@@ -472,7 +518,7 @@ public class PathAnalyze {
         //             Value left = assign.getLeftOp();
         //             updateValue(left, e, state);
         //         } else {
-        //             Log.error("[-] Unsupported Ret Unit type:  " + ret.getClass());
+        //             Log.error("Unsupported Ret Unit type:  " + ret.getClass());
         //         }
         //         doOne(ret, state, state.popCFG(), true);
         //         return null;
@@ -480,42 +526,61 @@ public class PathAnalyze {
         // }
 
         else if (className.equals("java.lang.Exception")) {
-            Log.info("[-] Exception invoke. Terminate. ");
-            return null;
+            Log.warn("Exception invoke. Terminate.");
+            return;
         } else if (className.equals("android.os.Process") && methodName.equals("myPid")) {
             Expr e = HookSymbol.handleMyPidAPI(expr, state, this.z3Ctx);
             if (e != null) {
-                Unit ret = state.popCall();
+                Unit ret = postInvoke(state);
                 if (ret instanceof AssignStmt assign) {
                     Value left = assign.getLeftOp();
                     updateValue(left, e, state);
                 } else {
-                    Log.error("[-] Unsupported Ret Unit type:  " + ret.getClass());
+                    Log.error("Unsupported Ret Unit type:  " + ret.getClass());
                 }
-                doOne(ret, state, state.popCFG(), true);
-                return null;
+                
+                doOne(ret, state, true);
+                return;
             }
         }
-        // TOFIX TEMP PATCH
-        Log.info("[+] Analyzing method: " + callee.getName());
+
+        // TODO FIX TEMP PATCH
         OnTheFlyJimpleBasedICFG cfg = new OnTheFlyJimpleBasedICFG(callee);
         Boolean hasActiveBody = callee.hasActiveBody();
 
         // handle normal case
         if ((entryMethod.getDeclaringClass().getName().contains(className) || StaticAPIs.ANALYZE_CLASS_SET.contains(methodName) || (enableInterAnalysis && this.CheckMethods.contains(callee) ) ) && hasActiveBody ) {
-            preInvoke(expr, state);
             analyzeMethod(callee, state);
-            
-        } else {
-            Unit ret = state.popCall();
-            doOne(ret, state, state.popCFG(), true);
+            return;
+        } else { // DO NOTHING
+            Unit ret = postInvoke(state);
+            doOne(ret, state, true);
         }
-        return state;
+        return;
     }
 
     // pass the parameters to the callee
-    public void preInvoke(InvokeExpr expr, SimState state) {
-        // handle param
+    public void preInvoke(Unit curUnit, SimState state) {
+        // get invoke expr
+        InvokeExpr expr = null;
+        if(curUnit instanceof JInvokeStmt invokeStmt){
+            expr = invokeStmt.getInvokeExpr();
+        // }
+        //  else if(curUnit instanceof JIdentityStmt identityStmt){
+        //     Value right = identityStmt.getRightOp();
+        //     if(right instanceof InvokeExpr invokeExpr){
+        //         expr = invokeExpr;
+        //     }
+        } else if(curUnit instanceof JAssignStmt assignStmt){
+            Value right = assignStmt.getRightOp();
+            if(right instanceof InvokeExpr invokeExpr){
+                expr = invokeExpr;
+            }
+        } else {
+            Log.error("Unsupported Stmt: " + curUnit.getClass());
+        }
+
+        // pass param
         List<Value> args = expr.getArgs();
         List<Expr> params = new ArrayList<>();
         for (int i = 0; i < args.size(); i++) {
@@ -523,10 +588,19 @@ public class PathAnalyze {
             Expr e = valueToExpr(arg, state);
             params.add(e);
         }
+
         state.pushParam(params);
-        
-        //handle localmap
+        state.pushCFG();
+        state.pushCall(curUnit);
         state.pushLocalMap();
+    }
+
+
+    public Unit postInvoke(SimState state) {
+        state.popCFG();
+        state.popParam();
+        state.popLocalMap();
+        return state.popCall();
     }
 
     // ============================================================================================

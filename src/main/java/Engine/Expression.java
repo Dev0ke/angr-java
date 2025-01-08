@@ -39,11 +39,11 @@ public class Expression {
             // }
        
             else{
-                Log.error("[Expression] Unsupported RefType in makeSymbol: " + refType.getClassName());
+                Log.error("Unsupported RefType in makeSymbol: " + refType.getClassName());
             }
         } 
         else {
-            Log.error("[Expression] Unsupported type in makeSymbol: " + type.getClass());
+            Log.error("Unsupported type in makeSymbol: " + type.getClass());
         }
         
         return v;
@@ -102,7 +102,7 @@ public class Expression {
     //     } else if(src.isBool()){
     //         v = ctx.mkInt2BV(1, src);
     //     } else{
-    //         Log.error("[Expression] Unsupported type: " + src.getClass());
+    //         Log.error("Unsupported type: " + src.getClass());
     //     }
     //     return v;
     // }
@@ -152,54 +152,57 @@ public class Expression {
             right = ctx.mkBV(right.isTrue() ? 1 : 0, 32);
         }
 
-        
+        assert(left instanceof BitVecExpr && right instanceof BitVecExpr);
+        BitVecExpr leftBV = (BitVecExpr) left;
+        BitVecExpr rightBV = (BitVecExpr) right;
+
         if (binopExpr instanceof EqExpr) {
-            v = ctx.mkEq(left, right);
+            v = ctx.mkEq(leftBV, rightBV);
         } else if (binopExpr instanceof NeExpr) {
-            v = ctx.mkNot(ctx.mkEq(left, right));
+            v = ctx.mkNot(ctx.mkEq(leftBV, rightBV));
         } else if (binopExpr instanceof GeExpr) {
-            v = isSigned ? ctx.mkBVSGE(left, right) : ctx.mkBVUGE(left, right);
+            v = isSigned ? ctx.mkBVSGE(leftBV, rightBV) : ctx.mkBVUGE(leftBV, rightBV);
         } else if (binopExpr instanceof GtExpr) {
-            v = isSigned ? ctx.mkBVSGT(left, right) : ctx.mkBVUGT(left, right);
+            v = isSigned ? ctx.mkBVSGT(leftBV, rightBV) : ctx.mkBVUGT(leftBV, rightBV);
         } else if (binopExpr instanceof LeExpr) {
-            v = isSigned ? ctx.mkBVSLE(left, right) : ctx.mkBVULE(left, right);
+            v = isSigned ? ctx.mkBVSLE(leftBV, rightBV) : ctx.mkBVULE(leftBV, rightBV);
         } else if (binopExpr instanceof LtExpr) {
-            v = isSigned ? ctx.mkBVSLT(left, right) : ctx.mkBVULT(left, right);
+            v = isSigned ? ctx.mkBVSLT(leftBV, rightBV) : ctx.mkBVULT(leftBV, rightBV);
         }   
         // 算术运算
         else if (binopExpr instanceof AddExpr) {
-            v = ctx.mkBVAdd(left, right);
+            v = ctx.mkBVAdd(leftBV, rightBV);
         } else if (binopExpr instanceof SubExpr) {
-            v = ctx.mkBVSub(left, right);
+            v = ctx.mkBVSub(leftBV, rightBV);
         } else if (binopExpr instanceof MulExpr) {
-            v = ctx.mkBVMul(left, right);
+            v = ctx.mkBVMul(leftBV, rightBV);
         } else if (binopExpr instanceof DivExpr) {
-            v = isSigned ? ctx.mkBVSDiv(left, right) : ctx.mkBVUDiv(left, right);
+            v = isSigned ? ctx.mkBVSDiv(leftBV, rightBV) : ctx.mkBVUDiv(leftBV, rightBV);
         } else if (binopExpr instanceof RemExpr) {
-            v = isSigned ? ctx.mkBVSRem(left, right) : ctx.mkBVURem(left, right);
+            v = isSigned ? ctx.mkBVSRem(leftBV, rightBV) : ctx.mkBVURem(leftBV, rightBV);
         }   
         // 比较运算
         else if (binopExpr instanceof CmpExpr) {
-            v = ctx.mkEq(left, right);
+            v = ctx.mkEq(leftBV, rightBV);
         } else if (binopExpr instanceof CmpgExpr) {
-            v = isSigned ? ctx.mkBVSGE(left, right) : ctx.mkBVUGE(left, right);
+            v = isSigned ? ctx.mkBVSGE(leftBV, rightBV) : ctx.mkBVUGE(leftBV, rightBV);
         } 
         // 位运算 
         else if (binopExpr instanceof AndExpr) {
-            v = ctx.mkBVAND(left, right);
+            v = ctx.mkBVAND(leftBV, rightBV);
         } else if (binopExpr instanceof OrExpr) {
-            v = ctx.mkBVOR(left, right);
+            v = ctx.mkBVOR(leftBV, rightBV);
         } else if (binopExpr instanceof XorExpr) {
-            v = ctx.mkBVXOR(left, right);
+            v = ctx.mkBVXOR(leftBV, rightBV);
         } else if (binopExpr instanceof ShlExpr) {
-            v = ctx.mkBVSHL(left, right);
+            v = ctx.mkBVSHL(leftBV, rightBV);
         } else if (binopExpr instanceof ShrExpr) {
-            v = ctx.mkBVASHR(left, right);
+            v = ctx.mkBVASHR(leftBV, rightBV);
         } else if (binopExpr instanceof UshrExpr) {
-            v = ctx.mkBVLSHR(left, right);
+            v = ctx.mkBVLSHR(leftBV, rightBV);
         }
         else {
-            Log.error("[Expression] Unsupported BinopExpr type: " + binopExpr.getClass());
+            Log.error("Unsupported BinopExpr type: " + binopExpr.getClass());
         }
 
         return v;
@@ -215,9 +218,9 @@ public class Expression {
             v = ctx.mkNot(src);
         } else if (unopExpr instanceof LengthExpr) {
             // TODO
-            Log.error("[Expression] Unsupported UnopExpr type: " + unopExpr.getClass());
+            Log.error("Unsupported UnopExpr type: " + unopExpr.getClass());
         }  else{
-            Log.error("[Expression] Unsupported UnopExpr type: " + unopExpr.getClass());
+            Log.error("Unsupported UnopExpr type: " + unopExpr.getClass());
         }
         return v;
     }
@@ -251,7 +254,7 @@ public class Expression {
             else if(src instanceof ULongConstant uLongConstant)
                 v = ctx.mkBV(uLongConstant.value, 64);  // ulong是64位无符号
             else
-                Log.error("[Expression] Unsupported ArithmeticConstant: " + src.getClass()); 
+                Log.error("Unsupported ArithmeticConstant: " + src.getClass()); 
         } else if(src instanceof StringConstant stringConstant)
             v = ctx.mkString(stringConstant.value);     // 字符串保持不变
         else if(src instanceof NullConstant)
@@ -261,7 +264,7 @@ public class Expression {
             //TODO          
         }
         else 
-            Log.error("[Expression] Unsupported Constant : " + src.getClass());
+            Log.error("Unsupported Constant : " + src.getClass());
         
         return v;
     }
