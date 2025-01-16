@@ -85,7 +85,7 @@ public class Main {
                         String methodName = method.getName();
                         if(methodName.contains("lambda$") || methodName.contains("$$Nest$"))
                             continue;
-                        Log.debug("|-- Method: " + methodName);
+                        // Log.debug("|-- Method: " + methodName);
                         methodList.add(method.getSubSignature());
                         method_count++;
                     }
@@ -93,7 +93,7 @@ public class Main {
                 }
                 if(method_count > 0)
                     result.put(sootClass.getName(),methodList);
-                Log.info("[+] Total Method: " + method_count);
+                // Log.info("[+] Total Method: " + method_count);
                 exposedMethod_count += method_count;
 
 
@@ -107,7 +107,7 @@ public class Main {
         Log.info("Total exposed Method: " + exposedMethod_count);
         return result;
     }
-    public static void multi3() {
+    public static void test_full_api() {
         long startTime = System.currentTimeMillis();
         // 1. 预先加载API列表
         HashMap<String, List<String>> apiList = readAPIfromFile(Config.apiListPath2);
@@ -131,7 +131,7 @@ public class Main {
         // 4. 初始化环境
         int APIversion = 24;
         String androidJarPath = JimpleConverter.getAndroidJarpath(APIversion);
-        List<String> allFiles = FirmwareUtils.findAllFiles("/public/AOSP24/out/target/product/mini-emulator-armv7-a-neon/system/");
+        List<String> allFiles = FirmwareUtils.findAllFiles("/public/android_6.0.1_r10/out/target/product/mini-emulator-armv7-a-neon/system/");
         FirmwareUtils.removeErrorFile(allFiles);
         
 
@@ -178,10 +178,6 @@ public class Main {
                 });
                 futures.add(future);
 
-                // // 7. 定期输出状态
-                // if (count.get() % 100 == 0) {
-                // printStatus(startTime, count, success, timeoutCount, errorCount);
-                // }
             }
         }
 
@@ -201,11 +197,9 @@ public class Main {
             Log.error("Executor termination interrupted: " + e.getMessage());
         }
 
-        // 9. 最终状态输出
-        printStatus(startTime, count, success, timeoutCount, errorCount);
     }
 
-    public static void multi2() {
+    public static void test_arc_api() {
         long startTime = System.currentTimeMillis();
         // 1. 预先加载API列表
         HashMap<String, List<String>> apiList = readAPIfromFile(Config.apiListPath2);
@@ -229,7 +223,7 @@ public class Main {
         // 4. 初始化环境
         int APIversion = 24;
         String androidJarPath = JimpleConverter.getAndroidJarpath(APIversion);
-        List<String> allFiles = FirmwareUtils.findAllFiles("/public/AOSP24/out/target/product/mini-emulator-armv7-a-neon/system/");
+        List<String> allFiles = FirmwareUtils.findAllFiles("/public/android_6.0.1_r10/out/target/product/mini-emulator-armv7-a-neon/system/");
         FirmwareUtils.removeErrorFile(allFiles);
         Log.info("[-] Total files: " + allFiles.size());
         SootEnv sootEnv = new SootEnv(androidJarPath, allFiles, Options.src_prec_apk);
@@ -267,10 +261,6 @@ public class Main {
                 });
                 futures.add(future);
 
-                // // 7. 定期输出状态
-                // if (count.get() % 100 == 0) {
-                // printStatus(startTime, count, success, timeoutCount, errorCount);
-                // }
             }
         }
 
@@ -290,8 +280,6 @@ public class Main {
             Log.error("Executor termination interrupted: " + e.getMessage());
         }
 
-        // 9. 最终状态输出
-        printStatus(startTime, count, success, timeoutCount, errorCount);
     }
 
     // 抽取的辅助方法
@@ -323,18 +311,12 @@ public class Main {
                 e.toString());
     }
 
-    private static void printStatus(long startTime, AtomicInteger count, AtomicInteger success,
-            AtomicInteger timeoutCount, AtomicInteger errorCount) {
-        Log.printTime("[+] Status", startTime);
-        Log.info("Total API: " + count.get() + " Success: " + success.get() +
-                " Timeout: " + timeoutCount.get() + " Errors: " + errorCount.get());
-    }
-
     public static void main(String[] args) {
         init();
-        // multi2();
+        // test_oppo();
+        // test_arc_api();
         // testOneBySign("com.android.phone.PhoneInterfaceManager","java.util.List getNeighboringCellInfo(java.lang.String)"); //double enforce
-        testOneBySign("com.android.server.devicepolicy.DevicePolicyManagerService","void setPasswordMinimumSymbols(android.content.ComponentName,int,boolean)");
+        // testOneBySign("com.android.server.devicepolicy.DevicePolicyManagerService","void setPasswordMinimumSymbols(android.content.ComponentName,int,boolean)");
         // testOneBySign("com.android.server.audio.AudioService", "void startBluetoothSco(android.os.IBinder,int)");
 
     }
@@ -342,9 +324,7 @@ public class Main {
     public static void testByMethodName(String className, String methodName) {
         int APIversion = 24;
         String androidJarPath = JimpleConverter.getAndroidJarpath(APIversion);
-        // String inputJarPath =
-        // "/public/AOSP25/out/target/product/generic_arm64/system/framework/services.jar";
-        List<String> allFiles = FirmwareUtils.findAllFiles("/public/AOSP24/out/target/product/mini-emulator-armv7-a-neon/system/");
+        List<String> allFiles = FirmwareUtils.findAllFiles("/public/android_6.0.1_r10/out/target/product/mini-emulator-armv7-a-neon/system/");
         FirmwareUtils.removeErrorFile(allFiles);
         Log.info("[-] Total files: " + allFiles.size());
         SootEnv sootEnv = new SootEnv(androidJarPath, allFiles, Options.src_prec_apk);
@@ -356,7 +336,7 @@ public class Main {
     public static void testOneBySign(String className, String signature) {
         int APIversion = 24;
         String androidJarPath = JimpleConverter.getAndroidJarpath(APIversion);
-        List<String> allFiles = FirmwareUtils.findAllFiles("/public/AOSP24/out/target/product/mini-emulator-armv7-a-neon/system/");
+        List<String> allFiles = FirmwareUtils.findAllFiles("/public/android_6.0.1_r10/out/target/product/mini-emulator-armv7-a-neon/system/");
         FirmwareUtils.removeErrorFile(allFiles);
         Log.info("[-] Total files: " + allFiles.size());
 
@@ -372,6 +352,94 @@ public class Main {
         PathAnalyze pa = new PathAnalyze(m2,result);
         pa.startAnalyze();
     
+    }
+
+
+    public static void test_oppo() {
+        AtomicInteger count = new AtomicInteger(0);
+        AtomicInteger success = new AtomicInteger(0);
+        AtomicInteger timeoutCount = new AtomicInteger(0);
+        AtomicInteger errorCount = new AtomicInteger(0);
+
+        // 3. 优化线程池配置
+        int processors = Runtime.getRuntime().availableProcessors();
+        ThreadPoolExecutor executor = new ThreadPoolExecutor(
+                processors, // 核心线程数
+                processors * 2, // 最大线程数
+                60L, TimeUnit.SECONDS, // 空闲线程存活时间
+                new LinkedBlockingQueue<>(1000), // 使用有界队列
+                new ThreadPoolExecutor.CallerRunsPolicy() // 队列满时的处理策略
+        );
+        Log.info("load frim");
+        // 4. 初始化环境
+        int APIversion = 35;
+        String androidJarPath = JimpleConverter.getAndroidJarpath(APIversion);
+        List<String> allFiles = FirmwareUtils.findAllFiles("/public/CustomRoms/oppo_gt7_a15/fs_target");
+        FirmwareUtils.removeErrorFile(allFiles);
+        Log.info("FILES : " + allFiles.size());
+        
+
+        SootEnv sootEnv = new SootEnv(androidJarPath, allFiles, Options.src_prec_apk);
+        sootEnv.initEnv();
+
+        HashMap<String,List<String>> apiList2= findAPI();
+        Log.info("[-] Total API: " + apiList2.size());
+
+
+        // 5. 使用批处理方式处理任务
+        ResultExporter resultExporter = new ResultExporter(Config.resultPath);
+        List<Future<?>> futures = new ArrayList<>();
+
+        for (Map.Entry<String, List<String>> entry : apiList2.entrySet()) {
+            String className = entry.getKey();
+            List<String> methodList = entry.getValue();
+
+            // 6. 批量提交任务
+            for (String methodSign : methodList) {
+                List<String> EXmethodSigns = apiList2.get(className);
+                if(EXmethodSigns != null && EXmethodSigns.contains(methodSign))
+                    continue;
+                count.incrementAndGet();
+                Future<?> future = executor.submit(() -> {
+                    try {
+                        SootMethod m = null;
+                        try {
+                            m = sootEnv.getMethodBySignature(className, methodSign);
+                        } catch (Exception e) {
+                            //convert sign to method name
+                            String methodName = methodSign.substring(0, methodSign.indexOf('('));
+                            methodName = methodName.substring(methodName.lastIndexOf(' ') + 1);
+                            m = sootEnv.getMethodByName(className, methodName);
+                        }
+                        // processMethod(m, className, methodSign, resultExporter, success);
+                        Log.info(className + "\t\t" + methodSign);
+                  
+                    } catch (Exception e) {
+                        errorCount.incrementAndGet();
+                        handleError(className, methodSign, resultExporter, e);
+                    }
+                });
+                futures.add(future);
+
+            }
+        }
+
+        // 8. 等待所有任务完成
+        for (Future<?> future : futures) {
+            try {
+                future.get(Config.timeout, TimeUnit.HOURS);
+            } catch (Exception e) {
+                Log.error("Task completion error: " + e.getMessage());
+            }
+        }
+
+        executor.shutdown();
+        try {
+            executor.awaitTermination(5, TimeUnit.MINUTES);
+        } catch (InterruptedException e) {
+            Log.error("Executor termination interrupted: " + e.getMessage());
+        }
+
     }
 
     public static HashMap<String, List<String>> readAPIfromFile(String path) {
@@ -401,5 +469,8 @@ public class Main {
         }
         return apiMap;
     }
+
+
+
 
 }

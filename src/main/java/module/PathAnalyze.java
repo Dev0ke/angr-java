@@ -142,19 +142,17 @@ public class PathAnalyze {
 
     public Unit getExceptionHandler(Unit curUnit, SimState state, RefType exceptionType) {
         Log.warn("Get Exception Handler for exception type: " + exceptionType);
-        
         while (!state.isCallStackEmpty()) {
             Unit lastCallUnit = postInvoke(state);
             ExceptionalUnitGraph lastcfg = state.getCurCFG();
             
-            // 获取所有异常处理器
+            // 获取所有异常处理
             List<Unit> exceptionHandlers = lastcfg.getExceptionalSuccsOf(lastCallUnit);
             
             if (exceptionHandlers.isEmpty()) {
-                continue; // 如果没有异常处理器，继续检查调用栈的下一个单元
+                continue; // 如果没有异常处理，继续检查调用栈的下一个单元
             }
-            
-            // 获取特定异常类型的处理器
+            // 获取特定异常类型的处理
             Chain<Trap> traps = lastcfg.getBody().getTraps();
             for (Trap trap : traps) {
                 // 检查该trap是否覆盖当前单元
@@ -173,7 +171,7 @@ public class PathAnalyze {
                 }
             }
             
-            // 如果没有找到具体异常类型的处理器，但有通用处理器（catch all）
+            // 如果没有找到具体异常类型的处理，但有通用处理器（catch all）
             for (Trap trap : traps) {
                 if (trap.getException().getType().equals(
                     Scene.v().getType("java.lang.Throwable"))) {

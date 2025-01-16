@@ -9,7 +9,10 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
 import java.util.Set;
-
+import java.io.IOException;
+import java.util.Enumeration;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 import java.util.Iterator;
 
 import init.Config;
@@ -70,6 +73,21 @@ public class FirmwareUtils {
         }
         return apkFiles;
     }
+    public static boolean containsDexFile(String zipFilePath) {
+        try (ZipFile zipFile = new ZipFile(zipFilePath)) {
+            Enumeration<? extends ZipEntry> entries = zipFile.entries();
+
+            while (entries.hasMoreElements()) {
+                ZipEntry entry = entries.nextElement();
+                if (entry.getName().toLowerCase().endsWith(".dex")) {
+                    return true;
+                }
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return false;
+    }
 
     public static List<String> findJarFiles(String directoryPath) {
         List<String> jarFiles = new ArrayList<>();
@@ -124,16 +142,26 @@ public class FirmwareUtils {
         return allFiles;
     }
 
+
+
     public static void removeErrorFile(List<String> allFiles) {
-        Set<String> errorFiles = new HashSet<>(Arrays.asList("CtsShimPrebuilt.apk", "framework-res.apk","CtsShimPrivPrebuilt.apk"));
+        // Set<String> errorFiles = new HashSet<>(Arrays.asList("CtsShimPrebuilt.apk", "framework-res.apk","CtsShimPrivPrebuilt.apk"));
         Iterator<String> iterator = allFiles.iterator();
         while (iterator.hasNext()) {
             String file = iterator.next();
+            
             // if file contains errorFiles, remove it
-            for (String errorFile : errorFiles) {
-                if (file.contains(errorFile)) {
+            // for (String errorFile : errorFiles) {
+            //     if (file.contains(errorFile)) {
+            //         iterator.remove();
+            //         break;
+            //     }
+            // }
+
+            if(file.contains(".apk")){
+                if(!containsDexFile(file)){
+                    Log.info("remove " + file);
                     iterator.remove();
-                    break;
                 }
             }
         }
