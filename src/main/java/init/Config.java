@@ -5,7 +5,7 @@ public class Config {
     // Basic Config
     public static int threads = 256;
     public static boolean useExistJimple = true;
-    public static String logLevel = "INFO";
+    public static String logLevel = "OFF";
     // Analysis Config
     public static boolean enableLazySolve = false;
     public static boolean enableInterAnalysis = true;
@@ -23,5 +23,5 @@ public class Config {
     public static String inputFirmwarePath = "/home/devoke/decheck/decheck_data/system";
     public static String tempPath = "/home/devoke/decheck/decheck_data/temp";
     public static String apiListPath = "/home/devoke/decheck/decheck_data/test_api_list/arcade_api.txt";
-    public static String apiListPath2 = "/home/devoke/decheck/decheck_data/test_api_list/arcade_api2.txt";
+    public static String apiListPath2 = "/home/devoke/decheck/decheck_data/test_api_list/arcade_api_AOSP_601.txt";
 }

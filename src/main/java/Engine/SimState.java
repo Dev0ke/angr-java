@@ -14,7 +14,6 @@ public class SimState {
         public ExceptionalUnitGraph curCFG;
         public List<Expr> constraints;
 
-
         public Map<String, Integer> instCount;
         public Map<String, Expr> staticFieldMap;
 

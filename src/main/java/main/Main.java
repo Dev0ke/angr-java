@@ -40,6 +40,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class Main {
 
+
     public static void init() {
         CheckPermissionAPI.init();
         CheckUidAPI.init();
@@ -108,7 +109,7 @@ public class Main {
         return result;
     }
     public static void test_full_api() {
-        long startTime = System.currentTimeMillis();
+
         // 1. 预先加载API列表
         HashMap<String, List<String>> apiList = readAPIfromFile(Config.apiListPath2);
 
@@ -129,9 +130,9 @@ public class Main {
         );
 
         // 4. 初始化环境
-        int APIversion = 24;
+
         String androidJarPath = JimpleConverter.getAndroidJarpath(APIversion);
-        List<String> allFiles = FirmwareUtils.findAllFiles("/public/android_6.0.1_r10/out/target/product/mini-emulator-armv7-a-neon/system/");
+        List<String> allFiles = FirmwareUtils.findAllFiles(inputPath);
         FirmwareUtils.removeErrorFile(allFiles);
         
 
@@ -200,7 +201,7 @@ public class Main {
     }
 
     public static void test_arc_api() {
-        long startTime = System.currentTimeMillis();
+  
         // 1. 预先加载API列表
         HashMap<String, List<String>> apiList = readAPIfromFile(Config.apiListPath2);
 
@@ -221,9 +222,9 @@ public class Main {
         );
 
         // 4. 初始化环境
-        int APIversion = 24;
+
         String androidJarPath = JimpleConverter.getAndroidJarpath(APIversion);
-        List<String> allFiles = FirmwareUtils.findAllFiles("/public/android_6.0.1_r10/out/target/product/mini-emulator-armv7-a-neon/system/");
+        List<String> allFiles = FirmwareUtils.findAllFiles(inputPath);
         FirmwareUtils.removeErrorFile(allFiles);
         Log.info("[-] Total files: " + allFiles.size());
         SootEnv sootEnv = new SootEnv(androidJarPath, allFiles, Options.src_prec_apk);
@@ -311,20 +312,12 @@ public class Main {
                 e.toString());
     }
 
-    public static void main(String[] args) {
-        init();
-        // test_oppo();
-        // test_arc_api();
-        // testOneBySign("com.android.phone.PhoneInterfaceManager","java.util.List getNeighboringCellInfo(java.lang.String)"); //double enforce
-        // testOneBySign("com.android.server.devicepolicy.DevicePolicyManagerService","void setPasswordMinimumSymbols(android.content.ComponentName,int,boolean)");
-        // testOneBySign("com.android.server.audio.AudioService", "void startBluetoothSco(android.os.IBinder,int)");
 
-    }
 
     public static void testByMethodName(String className, String methodName) {
-        int APIversion = 24;
+
         String androidJarPath = JimpleConverter.getAndroidJarpath(APIversion);
-        List<String> allFiles = FirmwareUtils.findAllFiles("/public/android_6.0.1_r10/out/target/product/mini-emulator-armv7-a-neon/system/");
+        List<String> allFiles = FirmwareUtils.findAllFiles(inputPath);
         FirmwareUtils.removeErrorFile(allFiles);
         Log.info("[-] Total files: " + allFiles.size());
         SootEnv sootEnv = new SootEnv(androidJarPath, allFiles, Options.src_prec_apk);
@@ -334,9 +327,9 @@ public class Main {
     }
 
     public static void testOneBySign(String className, String signature) {
-        int APIversion = 24;
+
         String androidJarPath = JimpleConverter.getAndroidJarpath(APIversion);
-        List<String> allFiles = FirmwareUtils.findAllFiles("/public/android_6.0.1_r10/out/target/product/mini-emulator-armv7-a-neon/system/");
+        List<String> allFiles = FirmwareUtils.findAllFiles(inputPath);
         FirmwareUtils.removeErrorFile(allFiles);
         Log.info("[-] Total files: " + allFiles.size());
 
@@ -372,7 +365,7 @@ public class Main {
         );
         Log.info("load frim");
         // 4. 初始化环境
-        int APIversion = 35;
+
         String androidJarPath = JimpleConverter.getAndroidJarpath(APIversion);
         List<String> allFiles = FirmwareUtils.findAllFiles("/public/CustomRoms/oppo_gt7_a15/fs_target");
         FirmwareUtils.removeErrorFile(allFiles);
@@ -396,9 +389,9 @@ public class Main {
 
             // 6. 批量提交任务
             for (String methodSign : methodList) {
-                List<String> EXmethodSigns = apiList2.get(className);
-                if(EXmethodSigns != null && EXmethodSigns.contains(methodSign))
-                    continue;
+                // List<String> EXmethodSigns = apiList2.get(className);
+                // if(EXmethodSigns != null && EXmethodSigns.contains(methodSign))
+                //     continue;
                 count.incrementAndGet();
                 Future<?> future = executor.submit(() -> {
                     try {
@@ -411,8 +404,8 @@ public class Main {
                             methodName = methodName.substring(methodName.lastIndexOf(' ') + 1);
                             m = sootEnv.getMethodByName(className, methodName);
                         }
-                        // processMethod(m, className, methodSign, resultExporter, success);
-                        Log.info(className + "\t\t" + methodSign);
+                        processMethod(m, className, methodSign, resultExporter, success);
+                        // Log.info(className + "\t\t" + methodSign);
                   
                     } catch (Exception e) {
                         errorCount.incrementAndGet();
@@ -470,7 +463,17 @@ public class Main {
         return apiMap;
     }
 
+    public static int APIversion = 23;
+    public static String inputPath = "/public/android_6.0.1_r10/out/target/product/mini-emulator-armv7-a-neon/system/";
+    // public static String inputPath = "/public/AOSP23/out/target/product/generic_arm64/system";   
 
+    public static void main(String[] args) {
+        init();
+        test_oppo();
+        // test_arc_api();
 
+        // testOneBySign("com.android.server.wifi.WifiServiceImpl", "void setWifiApEnabled(android.net.wifi.WifiConfiguration,boolean)");
+
+    }
 
 }

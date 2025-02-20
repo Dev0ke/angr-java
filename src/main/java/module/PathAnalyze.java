@@ -16,7 +16,6 @@ import soot.*;
 import soot.jimple.*;
 import soot.jimple.internal.*;
 import soot.jimple.toolkits.ide.icfg.OnTheFlyJimpleBasedICFG;
-import soot.toolkits.graph.ExceptionalBlockGraph;
 import soot.toolkits.graph.ExceptionalUnitGraph;
 import soot.util.Chain;
 import utils.Log;
@@ -213,8 +212,8 @@ public class PathAnalyze {
     }
 
     public void doOne(Unit curUnit, SimState state, Boolean isFromReturn) {
+
         ExceptionalUnitGraph cfg = state.getCurCFG();
-    
         // handle return
         if (isFromReturn) {
             List<Unit> units = cfg.getUnexceptionalSuccsOf(curUnit);
@@ -229,6 +228,7 @@ public class PathAnalyze {
             if (curUnit instanceof JIfStmt ifStmt) {
                 Value condition = ifStmt.getCondition();
                 Expr result = handleCalculate(condition, state);
+                
                 // copy current state
                 SimState branchState = state.copy();
                 Unit branch1 = ifStmt.getTarget();
@@ -253,6 +253,7 @@ public class PathAnalyze {
                     } else {
                         Log.info("unsat branch");
                     }
+
                     return;
                 } else {
                     if (branchState.addInstCount(curUnit) <= Config.branchLimit) {
@@ -341,7 +342,7 @@ public class PathAnalyze {
                     doOne(defaultTarget, branchState,  false);
                 return;
 
-            } else if (curUnit instanceof  JInvokeStmt) {
+            } else if (curUnit instanceof JInvokeStmt) {
                 preInvoke(curUnit, state);
                 handleInvoke(curUnit, state);
                 return;
@@ -360,9 +361,9 @@ public class PathAnalyze {
             /* DO NOTHING */
           } else if (curUnit instanceof JReturnStmt returnStmt) {
                 if (state.isCallStackEmpty()) {
-                    if (enableSolve)// Entry method
+                    if (enableSolve)
                         this.printSimplifyConstaints(state.constraints);
-                } else { // callee method
+                } else { 
                     Value retValue = returnStmt.getOp();
                     Expr retExpr = valueToExpr(retValue,state);
                     Unit ret = postInvoke(state);
@@ -403,19 +404,20 @@ public class PathAnalyze {
             } else if (curUnit instanceof JGotoStmt gotoStmt) {
                 Unit target = gotoStmt.getTarget();
                 doOne(target, state, false);
+                return;
             } else {
                 Log.error("Unhandle Unit: " + curUnit + curUnit.getClass());
             }
             // end handle ,get next unit
-            if (curUnit instanceof JGotoStmt gotoStmt) {
-                curUnit = gotoStmt.getTarget();
-            } else {
-                List<Unit> nextUnits = cfg.getUnexceptionalSuccsOf(curUnit);
-                for (Unit u : nextUnits) {
-                    doOne(u, state, false);
-                }
-                return;
+             
+
+
+            List<Unit> nextUnits = cfg.getUnexceptionalSuccsOf(curUnit);
+            for (Unit u : nextUnits) {
+                doOne(u, state, false);
             }
+            return;
+            
         }
         return;
     }
@@ -463,6 +465,7 @@ public class PathAnalyze {
                         Expr permissionValue = this.z3Ctx.mkEq(permissionExpr, z3Ctx.mkBV(CheckPermissionAPI.PERMISSION_SOFT_DENIED, 32));
                         throwState.addConstraint(permissionValue);
                         doOne(exceptionHandler, throwState, false);
+                        return;
                     }
                 }
 
@@ -523,31 +526,32 @@ public class PathAnalyze {
         //     }
         // }
 
-        else if (className.equals("java.lang.Exception")) {
-            Log.warn("Exception invoke. Terminate.");
-            return;
-        } else if (className.equals("android.os.Process") && methodName.equals("myPid")) {
-            Expr e = HookSymbol.handleMyPidAPI(expr, state, this.z3Ctx);
-            if (e != null) {
-                Unit ret = postInvoke(state);
-                if (ret instanceof AssignStmt assign) {
-                    Value left = assign.getLeftOp();
-                    updateValue(left, e, state);
-                } else {
-                    Log.error("Unsupported Ret Unit type:  " + ret.getClass());
-                }
+        // else if (className.equals("java.lang.Exception")) {
+        //     Log.warn("Exception invoke. Terminate.");
+        //     return;
+        // } else if (className.equals("android.os.Process") && methodName.equals("myPid")) {
+        //     Expr e = HookSymbol.handleMyPidAPI(expr, state, this.z3Ctx);
+        //     if (e != null) {
+        //         Unit ret = postInvoke(state);
+        //         if (ret instanceof AssignStmt assign) {
+        //             Value left = assign.getLeftOp();
+        //             updateValue(left, e, state);
+        //         } else {
+        //             Log.error("Unsupported Ret Unit type:  " + ret.getClass());
+        //         }
                 
-                doOne(ret, state, true);
-                return;
-            }
-        }
+        //         doOne(ret, state, true);
+        //         return;
+        //     }
+        // }
 
-        // TODO FIX TEMP PATCH
+
         OnTheFlyJimpleBasedICFG cfg = new OnTheFlyJimpleBasedICFG(callee);
         Boolean hasActiveBody = callee.hasActiveBody();
 
         // handle normal case
-        if ((entryMethod.getDeclaringClass().getName().contains(className) || StaticAPIs.ANALYZE_CLASS_SET.contains(methodName) || (enableInterAnalysis && this.CheckMethods.contains(callee) ) ) && hasActiveBody ) {
+        if(  hasActiveBody && (/*entryMethod.getDeclaringClass().getName().contains(className) ||*/ StaticAPIs.ANALYZE_CLASS_SET.contains(methodName) || (enableInterAnalysis && this.CheckMethods.contains(callee) ) )  ) {
+           
             analyzeMethod(callee, state);
             return;
         } else { // DO NOTHING
@@ -586,11 +590,10 @@ public class PathAnalyze {
             Expr e = valueToExpr(arg, state);
             params.add(e);
         }
-
-        state.pushParam(params);
-        state.pushCFG();
         state.pushCall(curUnit);
         state.pushLocalMap();
+        state.pushParam(params);
+        state.pushCFG();
     }
 
 
