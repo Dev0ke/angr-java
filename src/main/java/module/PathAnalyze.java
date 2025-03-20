@@ -20,6 +20,9 @@ import soot.toolkits.graph.ExceptionalUnitGraph;
 import soot.util.Chain;
 import utils.Log;
 
+import module.HookSymbol.*;
+
+
 import java.util.*;
 
 import static init.Config.enableInterAnalysis;
@@ -481,76 +484,75 @@ public class PathAnalyze {
                 doOne(ret, state, true);
                 return;
             }
+        } else if (CheckUidAPI.allClassNames.contains(className) && methodName.equals("getCallingUid")) {
+            Log.warn("[+] Find UID API: " + className + "." + methodName);
+            Expr e = HookSymbol.handleUidAPI(expr, state, this.z3Ctx);
+            if (e != null) {
+                Unit ret = postInvoke(state);
+                if (ret instanceof AssignStmt assign) {
+                    Value left = assign.getLeftOp();
+                    updateValue(left, e, state);
+                } else {
+                    Log.error("Unsupported Ret Unit type:  " + ret.getClass());
+                }
+                doOne(ret, state, true);
+                return;
+            }
+        } else if (CheckPidAPI.allClassNames.contains(className) && methodName.equals("getCallingPid")) {
+            Log.warn("[+] Find PID API: " + className + "." + methodName);
+            Expr e = HookSymbol.handlePidAPI(expr, state, this.z3Ctx);
+            if (e != null) {
+                Unit ret = postInvoke(state);
+                if (ret instanceof AssignStmt assign) {
+                    Value left = assign.getLeftOp();
+                    updateValue(left, e, state);
+                } else {
+                    Log.error("Unsupported Ret Unit type: " + ret.getClass());
+                }
+                doOne(ret, state, true);
+                return;
+            }
+        } else if (CheckAppOpAPI.getAllClassName().contains(className)) {
+            Log.warn("[+] Find AppOp API: " + className + "." + methodName);
+            Expr e = HookSymbol.handleAppOpAPI(expr, state, this.z3Ctx);
+            if (e != null) {
+                Unit ret = postInvoke(state);
+                if (ret instanceof AssignStmt assign) {
+                    Value left = assign.getLeftOp();
+                    updateValue(left, e, state);
+                } else {
+                    Log.error("Unsupported Ret Unit type:  " + ret.getClass());
+                }
+                doOne(ret, state, true);
+                return ;
+            }
         }
-        // } else if (CheckUidAPI.allClassNames.contains(className) && methodName.equals("getCallingUid")) {
-        //     Log.warn("[+] Find UID API: " + className + "." + methodName);
-        //     Expr e = handleUidAPI(expr, state);
-        //     if (e != null) {
-        //         Unit ret = state.popCall();
-        //         if (ret instanceof AssignStmt assign) {
-        //             Value left = assign.getLeftOp();
-        //             updateValue(left, e, state);
-        //         } else {
-        //             Log.error("Unsupported Ret Unit type:  " + ret.getClass());
-        //         }
-        //         doOne(ret, state, state.popCFG(), true);
-        //         return null;
-        //     }
-        // } else if (CheckPidAPI.allClassNames.contains(className) && methodName.equals("getCallingPid")) {
-        //     Log.warn("[+] Find PID API: " + className + "." + methodName);
-        //     Expr e = handlePidAPI(expr, state);
-        //     if (e != null) {
-        //         Unit ret = state.popCall();
-        //         if (ret instanceof AssignStmt assign) {
-        //             Value left = assign.getLeftOp();
-        //             updateValue(left, e, state);
-        //         } else {
-        //             Log.error("Unsupported Ret Unit type: " + ret.getClass());
-        //         }
-        //         doOne(ret, state, state.popCFG(), true);
-        //         return null;
-        //     }
-        // } else if (CheckAppOpAPI.getAllClassName().contains(className)) {
-        //     Log.warn("[+] Find AppOp API: " + className + "." + methodName);
-        //     Expr e = handleAppOpAPI(expr, state);
-        //     if (e != null) {
-        //         Unit ret = state.popCall();
-        //         if (ret instanceof AssignStmt assign) {
-        //             Value left = assign.getLeftOp();
-        //             updateValue(left, e, state);
-        //         } else {
-        //             Log.error("Unsupported Ret Unit type:  " + ret.getClass());
-        //         }
-        //         doOne(ret, state, state.popCFG(), true);
-        //         return null;
-        //     }
-        // }
 
-        // else if (className.equals("java.lang.Exception")) {
-        //     Log.warn("Exception invoke. Terminate.");
-        //     return;
-        // } else if (className.equals("android.os.Process") && methodName.equals("myPid")) {
-        //     Expr e = HookSymbol.handleMyPidAPI(expr, state, this.z3Ctx);
-        //     if (e != null) {
-        //         Unit ret = postInvoke(state);
-        //         if (ret instanceof AssignStmt assign) {
-        //             Value left = assign.getLeftOp();
-        //             updateValue(left, e, state);
-        //         } else {
-        //             Log.error("Unsupported Ret Unit type:  " + ret.getClass());
-        //         }
+        else if (className.equals("java.lang.Exception")) {
+            Log.warn("Exception invoke. Terminate.");
+            return;
+        } else if (className.equals("android.os.Process") && methodName.equals("myPid")) {
+            Expr e = HookSymbol.handleMyPidAPI(expr, state, this.z3Ctx);
+            if (e != null) {
+                Unit ret = postInvoke(state);
+                if (ret instanceof AssignStmt assign) {
+                    Value left = assign.getLeftOp();
+                    updateValue(left, e, state);
+                } else {
+                    Log.error("Unsupported Ret Unit type:  " + ret.getClass());
+                }
                 
-        //         doOne(ret, state, true);
-        //         return;
-        //     }
-        // }
+                doOne(ret, state, true);
+                return;
+            }
+        }
 
 
         OnTheFlyJimpleBasedICFG cfg = new OnTheFlyJimpleBasedICFG(callee);
         Boolean hasActiveBody = callee.hasActiveBody();
 
         // handle normal case
-        if(  hasActiveBody && (/*entryMethod.getDeclaringClass().getName().contains(className) ||*/ StaticAPIs.ANALYZE_CLASS_SET.contains(methodName) || (enableInterAnalysis && this.CheckMethods.contains(callee) ) )  ) {
+        if(  hasActiveBody && (entryMethod.getDeclaringClass().getName().contains(className) || StaticAPIs.ANALYZE_CLASS_SET.contains(methodName) || (enableInterAnalysis && this.CheckMethods.contains(callee) ) )  ) {
            
             analyzeMethod(callee, state);
             return;

@@ -35,9 +35,6 @@ public class SootEnv {
         return Scene.v().getMethod(methodSignature);
     }
 
-    //TODO
-    //jar get classes
-
 
 
     public Set<SootClass> getAllClass() {

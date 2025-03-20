@@ -12,15 +12,15 @@ public class AccessControlUtils {
 
 
     public static boolean isAccessControlExpr(Expr e) {
-        return e.toString().contains("TYPE_");
+        return e.toString().contains("::");
     }
 
     public static boolean isUIDExpr(Expr e) {
-        return e.toString().contains("TYPE_UID");
+        return e.toString().contains("UID");
     }
 
     public static boolean isPIDExpr(Expr e) {
-        return e.toString().contains("TYPE_PID");
+        return e.toString().contains("PID");
     }
     public static Set<String> getAccessControlClassName(){
         Set<String> accessControlClassName = new HashSet<>();

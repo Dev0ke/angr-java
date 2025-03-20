@@ -22,7 +22,7 @@ public class HookSymbol {
     public static Expr handleUidAPI(InvokeExpr expr, SimState state, Context z3Ctx) {
         String methodName = expr.getMethod().getName();
         if (methodName.equals("getCallingUid")) {
-            String symbolName = "TYPE_UID#CallingUid";
+            String symbolName = "UID::CallingUid";
             Expr uidExpr = state.getSymbolByName(symbolName);
             if (uidExpr == null) {
                 uidExpr = z3Ctx.mkBVConst(symbolName, 32);
@@ -37,7 +37,7 @@ public class HookSymbol {
     public static Expr handlePidAPI(InvokeExpr expr, SimState state, Context z3Ctx) {
         String methodName = expr.getMethod().getName();
         if (methodName.equals("getCallingPid")) {
-            String symbolName = "TYPE_PID#CallingPid";
+            String symbolName = "PID::CallingPid";
             Expr pidExpr = state.getSymbolByName(symbolName);
             if (pidExpr == null) {
                 pidExpr = z3Ctx.mkBVConst(symbolName, 32);
@@ -49,7 +49,7 @@ public class HookSymbol {
     }
 
     public static Expr handleMyPidAPI(InvokeExpr expr, SimState state, Context z3Ctx) {
-        String symbolName = "TYPE_PID#MY_PID";
+        String symbolName = "PID::MyPID";
         Expr pidExpr = state.getSymbolByName(symbolName);
         if (pidExpr == null) {
             pidExpr = z3Ctx.mkBVConst(symbolName, 32);
@@ -74,7 +74,7 @@ public class HookSymbol {
                 Log.error("Unsupported APPOP type: " + params.get(0).getClass());
                 return null;
             }
-            String symbolName = "TYPE_AppOp#" + appOPSTR;
+            String symbolName = "AppOp::" + appOPSTR;
 
             // create or get Expr
             Expr AppOpExpr = state.getSymbolByName(symbolName);
@@ -109,7 +109,7 @@ public class HookSymbol {
             }
 
             // create or get Expr
-            String permissionSymbolName = "TYPE_PERMISSION#" + permissionValue;
+            String permissionSymbolName = "Permission::" + permissionValue;
             Expr permissionExpr = state.getSymbolByName(permissionSymbolName);
             if (permissionExpr == null) {
                 permissionExpr = z3Ctx.mkBVConst(permissionSymbolName, 32);
@@ -132,7 +132,7 @@ public class HookSymbol {
 
 
             // create or get Expr
-            String permissionSymbolName = "TYPE_PERMISSION#" + permissionValue;
+            String permissionSymbolName = "Permission::" + permissionValue;
             Expr permissionExpr = state.getSymbolByName(permissionSymbolName);
             if (permissionExpr == null) {
                 permissionExpr = z3Ctx.mkBVConst(permissionSymbolName, 32);
@@ -141,7 +141,7 @@ public class HookSymbol {
 
             // add Constraint for possible results
             List<Expr> possbileValueConstraints = new ArrayList<>();
-            for (int i : CheckPermissionAPI.POSSIBLE_PERMISSIONS_CHECK_RESULTS_OLD) {
+            for (int i : CheckPermissionAPI.POSSIBLE_PERMISSIONS_CHECK_RESULTS) {
                 possbileValueConstraints.add(z3Ctx.mkEq(permissionExpr, z3Ctx.mkBV(i, 32)));
             }
             state.addConstraint(z3Ctx.mkEq(z3Ctx.mkOr(possbileValueConstraints.toArray(new Expr[0])), z3Ctx.mkTrue()));

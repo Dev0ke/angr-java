@@ -37,7 +37,7 @@ import java.io.IOException;
 
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
-
+import module.ClearDetector;
 public class Main {
 
 
@@ -111,7 +111,7 @@ public class Main {
     public static void test_full_api() {
 
         // 1. 预先加载API列表
-        HashMap<String, List<String>> apiList = readAPIfromFile(Config.apiListPath2);
+        HashMap<String, List<String>> apiList = readAPIfromFile(Config.AOSP_601_ARCADE);
 
         // 2. 使用计数器对象替代原始类型，避免并发问题
         AtomicInteger count = new AtomicInteger(0);
@@ -203,7 +203,7 @@ public class Main {
     public static void test_arc_api() {
   
         // 1. 预先加载API列表
-        HashMap<String, List<String>> apiList = readAPIfromFile(Config.apiListPath2);
+        HashMap<String, List<String>> apiList = readAPIfromFile(Config.AOSP_601_ARCADE);
 
         // 2. 使用计数器对象替代原始类型，避免并发问题
         AtomicInteger count = new AtomicInteger(0);
@@ -258,7 +258,7 @@ public class Main {
                     } catch (Exception e) {
                         errorCount.incrementAndGet();
                         handleError(className, methodSign, resultExporter, e);
-                    }
+                    } 
                 });
                 futures.add(future);
 
@@ -283,21 +283,32 @@ public class Main {
 
     }
 
-    // 抽取的辅助方法
+    // // 抽取的辅助方法
+    // private static void processMethod(SootMethod m, String className, String methodSignature,
+    //         ResultExporter resultExporter, AtomicInteger success) throws TimeoutException {
+    //     long paStartTime = System.currentTimeMillis();
+    //     CheckFinder cf = new CheckFinder(m);
+    //     HashSet<SootMethod> CheckNodes = cf.runFind();
+    //     PathAnalyze pa = new PathAnalyze(m,CheckNodes);
+    //     pa.startAnalyze();
+    //     Set<List<String>> result = pa.getAnalyzeResult();
+    //     long paEndTime = System.currentTimeMillis();
+    //     resultExporter.writeResult(ResultExporter.CODE_SUCCESS, className, methodSignature, result,
+    //             paEndTime - paStartTime, "");
+    //     success.incrementAndGet();
+    // }
+
+
     private static void processMethod(SootMethod m, String className, String methodSignature,
             ResultExporter resultExporter, AtomicInteger success) throws TimeoutException {
         long paStartTime = System.currentTimeMillis();
-        CheckFinder cf = new CheckFinder(m);
-        HashSet<SootMethod> CheckNodes = cf.runFind();
-        PathAnalyze pa = new PathAnalyze(m,CheckNodes);
-        pa.startAnalyze();
-        Set<List<String>> result = pa.getAnalyzeResult();
+        ClearDetector cf2 = new ClearDetector(m);
+        cf2.runFind();
         long paEndTime = System.currentTimeMillis();
-        resultExporter.writeResult(ResultExporter.CODE_SUCCESS, className, methodSignature, result,
-                paEndTime - paStartTime, "");
+        // resultExporter.writeResult(ResultExporter.CODE_SUCCESS, className, methodSignature, ,
+        //         paEndTime - paStartTime, "");
         success.incrementAndGet();
     }
-
     private static void handleTimeout(String className, String methodName,
             ResultExporter resultExporter, Exception e) {
         Log.error("[-] Analyse timeout: ");
@@ -365,9 +376,12 @@ public class Main {
         );
         Log.info("load frim");
         // 4. 初始化环境
+        String firmPath = "/public/CustomRoms/oppo_gt7_a15/fs_target";
+        // String firmPath = "/public/CustomRoms/xiaomi_yuechu";
+        int APIV= 33;
+        String androidJarPath = JimpleConverter.getAndroidJarpath(APIV);
+        List<String> allFiles = FirmwareUtils.findAllFiles(firmPath);
 
-        String androidJarPath = JimpleConverter.getAndroidJarpath(APIversion);
-        List<String> allFiles = FirmwareUtils.findAllFiles("/public/CustomRoms/oppo_gt7_a15/fs_target");
         FirmwareUtils.removeErrorFile(allFiles);
         Log.info("FILES : " + allFiles.size());
         
@@ -465,13 +479,12 @@ public class Main {
 
     public static int APIversion = 23;
     public static String inputPath = "/public/android_6.0.1_r10/out/target/product/mini-emulator-armv7-a-neon/system/";
-    // public static String inputPath = "/public/AOSP23/out/target/product/generic_arm64/system";   
 
     public static void main(String[] args) {
         init();
         test_oppo();
         // test_arc_api();
-
+        // test_full_api();
         // testOneBySign("com.android.server.wifi.WifiServiceImpl", "void setWifiApEnabled(android.net.wifi.WifiConfiguration,boolean)");
 
     }
