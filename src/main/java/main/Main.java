@@ -4,17 +4,14 @@ import accessControl.CheckAppOpAPI;
 import accessControl.CheckPermissionAPI;
 import accessControl.CheckPidAPI;
 import accessControl.CheckUidAPI;
-
+import module.APIFinder;
 import module.CheckFinder;
 import module.JimpleConverter;
 import module.PathAnalyze;
 
-import soot.Scene;
-import soot.SootClass;
 import soot.SootMethod;
-
 import soot.options.Options;
-import soot.util.Chain;
+
 import utils.FirmwareUtils;
 import utils.Log;
 import init.Config;
@@ -25,10 +22,9 @@ import java.util.ArrayList;
 
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Set;
 
 import java.util.List;
-
-import java.util.Set;
 import java.util.concurrent.*;
 import java.io.BufferedReader;
 import java.io.File;
@@ -38,8 +34,8 @@ import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import module.ClearDetector;
-public class Main {
 
+public class Main {
 
     public static void init() {
         CheckPermissionAPI.init();
@@ -49,65 +45,6 @@ public class Main {
         Log.initLogLevel();
     }
 
-    public static HashMap<String,List<String>> findAPI() {
-        HashMap<String,List<String>> result = new HashMap<>();
-        Chain<SootClass> classes = Scene.v().getClasses();
-
-        int exposedClass_count = 0;
-        int exposedMethod_count = 0;
-        for (SootClass sootClass : classes) {
-            if (!sootClass.isPublic()) {
-                continue;
-            }
-
-            //获取父类
-            SootClass superClass = sootClass.hasSuperclass() ? sootClass.getSuperclass() : null;
-            if(superClass == null)
-                continue;
-
-            // 检查父类名称是否包含 "Stub"
-            String superClassName =  superClass.getName() ;
-            //TO REMOVE
-            if (superClassName.contains("$Stub") || superClassName.contains("com.android.server.SystemService") ||superClassName.contains("JobService") ) {
-                // 检查类是否为public
-
-                Log.info("Class: " + sootClass.getName() + " extends " + superClass.getName());
-                exposedClass_count++;
-                // 获取 public method
-                int method_count = 0;
-                List<String> methodList = new ArrayList<>();
-                for (SootMethod method : sootClass.getMethods()) {
-                    //  排除 init
-                    if (method.getName().equals("<init>") || method.getName().equals("<clinit>") || !method.isPublic()) {
-                        continue;
-                    }
-
-                    if (!method.isNative() && !method.isAbstract()) {
-                        String methodName = method.getName();
-                        if(methodName.contains("lambda$") || methodName.contains("$$Nest$"))
-                            continue;
-                        // Log.debug("|-- Method: " + methodName);
-                        methodList.add(method.getSubSignature());
-                        method_count++;
-                    }
-
-                }
-                if(method_count > 0)
-                    result.put(sootClass.getName(),methodList);
-                // Log.info("[+] Total Method: " + method_count);
-                exposedMethod_count += method_count;
-
-
-            }
-            else if( superClassName.contains("com.android.server.SystemService") ){
-                //TODO getImpl
-            }
-
-        }
-        Log.info("Total exposed Class: " + exposedClass_count);
-        Log.info("Total exposed Method: " + exposedMethod_count);
-        return result;
-    }
     public static void test_full_api() {
 
         // 1. 预先加载API列表
@@ -139,8 +76,9 @@ public class Main {
         SootEnv sootEnv = new SootEnv(androidJarPath, allFiles, Options.src_prec_apk);
         sootEnv.initEnv();
 
-        HashMap<String,List<String>> apiList2= findAPI();
-        Log.info("[-] Total API: " + apiList2.size());
+        // HashMap<String,List<String>> apiList2 = APIFinder.findServiceAPI();
+        HashMap<String,List<String>> apiList2 = APIFinder.findProviderAPI();
+
 
 
         // 5. 使用批处理方式处理任务
@@ -284,27 +222,27 @@ public class Main {
     }
 
     // // 抽取的辅助方法
-    // private static void processMethod(SootMethod m, String className, String methodSignature,
-    //         ResultExporter resultExporter, AtomicInteger success) throws TimeoutException {
-    //     long paStartTime = System.currentTimeMillis();
-    //     CheckFinder cf = new CheckFinder(m);
-    //     HashSet<SootMethod> CheckNodes = cf.runFind();
-    //     PathAnalyze pa = new PathAnalyze(m,CheckNodes);
-    //     pa.startAnalyze();
-    //     Set<List<String>> result = pa.getAnalyzeResult();
-    //     long paEndTime = System.currentTimeMillis();
-    //     resultExporter.writeResult(ResultExporter.CODE_SUCCESS, className, methodSignature, result,
-    //             paEndTime - paStartTime, "");
-    //     success.incrementAndGet();
-    // }
-
-
     private static void processMethod(SootMethod m, String className, String methodSignature,
             ResultExporter resultExporter, AtomicInteger success) throws TimeoutException {
         long paStartTime = System.currentTimeMillis();
+        CheckFinder cf = new CheckFinder(m);
+        HashSet<SootMethod> CheckNodes = cf.runFind();
+        PathAnalyze pa = new PathAnalyze(m,CheckNodes);
+        pa.startAnalyze();
+        Set<List<String>> result = pa.getAnalyzeResult();
+        long paEndTime = System.currentTimeMillis();
+        resultExporter.writeResult(ResultExporter.CODE_SUCCESS, className, methodSignature, result,
+                paEndTime - paStartTime, "");
+        success.incrementAndGet();
+    }
+
+
+    private static void find_clearAPI(SootMethod m, String className, String methodSignature,
+            ResultExporter resultExporter, AtomicInteger success) throws TimeoutException {
+        // long paStartTime = System.currentTimeMillis();
         ClearDetector cf2 = new ClearDetector(m);
         cf2.runFind();
-        long paEndTime = System.currentTimeMillis();
+        // long paEndTime = System.currentTimeMillis();
         // resultExporter.writeResult(ResultExporter.CODE_SUCCESS, className, methodSignature, ,
         //         paEndTime - paStartTime, "");
         success.incrementAndGet();
@@ -376,7 +314,7 @@ public class Main {
         );
         Log.info("load frim");
         // 4. 初始化环境
-        String firmPath = "/public/CustomRoms/oppo_gt7_a15/fs_target";
+        String firmPath = "/public/CustomRoms/OPPO_RMX3888_C15_610/fs";
         // String firmPath = "/public/CustomRoms/xiaomi_yuechu";
         int APIV= 33;
         String androidJarPath = JimpleConverter.getAndroidJarpath(APIV);
@@ -389,7 +327,7 @@ public class Main {
         SootEnv sootEnv = new SootEnv(androidJarPath, allFiles, Options.src_prec_apk);
         sootEnv.initEnv();
 
-        HashMap<String,List<String>> apiList2= findAPI();
+        HashMap<String,List<String>> apiList2 = APIFinder.findServiceAPI();
         Log.info("[-] Total API: " + apiList2.size());
 
 
@@ -418,7 +356,7 @@ public class Main {
                             methodName = methodName.substring(methodName.lastIndexOf(' ') + 1);
                             m = sootEnv.getMethodByName(className, methodName);
                         }
-                        processMethod(m, className, methodSign, resultExporter, success);
+                        find_clearAPI(m, className, methodSign, resultExporter, success);
                         // Log.info(className + "\t\t" + methodSign);
                   
                     } catch (Exception e) {

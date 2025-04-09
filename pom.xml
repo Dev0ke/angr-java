@@ -80,7 +80,7 @@
         <dependency>
             <groupId>com.microsoft.z3</groupId>
             <artifactId>z3</artifactId>
-            <version>4.13.4</version>
+            <version>4.14.1</version>
             <systemPath>${basedir}/libs/com.microsoft.z3.jar</systemPath>
             <scope>system</scope>
         </dependency>
