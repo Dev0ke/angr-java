@@ -12,7 +12,11 @@ public class AccessControlUtils {
 
 
     public static boolean isAccessControlExpr(Expr e) {
-        return e.toString().contains("::");
+        if(e == null) {
+            return false;
+        }
+        String exprStr = e.toString();
+        return exprStr.contains("<") && exprStr.contains(">");
     }
 
     public static boolean isUIDExpr(Expr e) {

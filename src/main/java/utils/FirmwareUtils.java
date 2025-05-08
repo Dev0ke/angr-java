@@ -129,8 +129,23 @@ public class FirmwareUtils {
    
     }
 
+    public static void deleteDirectory(File directory) {
+        if (directory.isDirectory()) {
+            File[] files = directory.listFiles();
+            if (files != null) {
+                for (File file : files) {
+                    deleteDirectory(file);
+                }
+            }
+        }
+        directory.delete();
+    }
+
 
     public static List<String> findAllFiles(String directoryPath) {
+        //clean temp dir include subdir
+        deleteDirectory(new File(Config.tempPath));
+
         List<String> allFiles = new ArrayList<>();
         allFiles.addAll(findApkFiles(directoryPath));
         List<String> jarFiles = findJarFiles(directoryPath);

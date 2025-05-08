@@ -3,14 +3,16 @@ package init;
 public class Config {
 
     // Basic Config
-    public static int threads = 64;
+    public static int threads = 256;
     public static boolean useExistJimple = true;
     public static String logLevel = "INFO";
     // Analysis Config
     public static boolean enableLazySolve = false;
     public static boolean enableInterAnalysis = true;
     public static boolean enableParamSymbolize = false;
-    public static int branchLimit = 4;
+    public static int LoopLimit = 4;
+    public static int branchLimit = 12;
+    public static int depthLimit = 1000;
     public static int timeout = 60*60;
 
     // Path Config

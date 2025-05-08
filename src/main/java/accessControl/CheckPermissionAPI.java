@@ -12,9 +12,9 @@ public class CheckPermissionAPI {
     public static final int PERMISSION_HARD_DENIED = 2;
     public static final int PERMISSION_SOFT_DENIED = 1;
 
+    // public static final int[] POSSIBLE_PERMISSIONS_CHECK_RESULTS
+    //         = {PERMISSION_GRANTED, PERMISSION_HARD_DENIED, PERMISSION_SOFT_DENIED};
     public static final int[] POSSIBLE_PERMISSIONS_CHECK_RESULTS
-            = {PERMISSION_GRANTED, PERMISSION_HARD_DENIED, PERMISSION_SOFT_DENIED};
-    public static final int[] POSSIBLE_PERMISSIONS_CHECK_RESULTS_OLD
             = {PERMISSION_GRANTED, PERMISSION_SOFT_DENIED};          
 
     public static void initialize(String[][] apiData) {

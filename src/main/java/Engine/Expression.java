@@ -268,6 +268,15 @@ public class Expression {
         
         return v;
     }
+
+    public static Expr conditionToExpr(){
+
+
+        return null;
+
+    }
+
+
     
     public static int getTypeWidth(Type type) {
         // 有符号整数类型

@@ -3,7 +3,7 @@ package module;
 import accessControl.*;
 
 import init.Config;
-import init.StaticAPIs;
+
 
 import com.microsoft.z3.*;
 import com.microsoft.z3.Context;
@@ -17,11 +17,9 @@ import soot.jimple.*;
 import soot.jimple.internal.*;
 import soot.jimple.toolkits.ide.icfg.OnTheFlyJimpleBasedICFG;
 import soot.toolkits.graph.ExceptionalUnitGraph;
+import soot.toolkits.graph.UnitGraph;
 import soot.util.Chain;
 import utils.Log;
-
-import module.HookSymbol.*;
-
 
 import java.util.*;
 
@@ -98,9 +96,13 @@ public class PathAnalyze {
         return initState;
     }
 
+    public static boolean hasMultipleInDegrees(UnitGraph cfg, Unit unit) {
+        List<Unit> predecessors = cfg.getPredsOf(unit);
+        return predecessors.size() > 1;
+    }
+    
 
     public void startAnalyze() {
-        // g.displayGraph();
         SimState initState = handleInitMethod();
         this.enableSolve = true;
 
@@ -124,22 +126,6 @@ public class PathAnalyze {
         doOne(entryPoint, state, false);
         return;
     }
-
-    // TODO HANDLE MULTIPLE EXCEPTION HANDLER
-    // public Unit getExceptionHandler(Unit curUnit, SimState state){ 
-    //     Log.warn("Get Exception Handler");
-    //     while(!state.isCallStackEmpty()){
-    //         Unit lastCallUnit = postInvoke(state);
-    //         ExceptionalUnitGraph lastcfg = state.getCurCFG();
-    //         lastcfg.getBody().getTraps();
-    //         List<Unit> exceptionHandler = lastcfg.getExceptionalSuccsOf(lastCallUnit);
-    //         if(exceptionHandler.size() == 1){
-    //             return exceptionHandler.get(0);
-    //         }
-    //     }
-    //     return null;
-    // }
-
 
 
     public Unit getExceptionHandler(Unit curUnit, SimState state, RefType exceptionType) {
@@ -215,7 +201,6 @@ public class PathAnalyze {
     }
 
     public void doOne(Unit curUnit, SimState state, Boolean isFromReturn) {
-
         ExceptionalUnitGraph cfg = state.getCurCFG();
         // handle return
         if (isFromReturn) {
@@ -227,7 +212,7 @@ public class PathAnalyze {
         }
 
         while (curUnit != null) {
-            Log.info(curUnit.toString());
+            Log.info(curUnit.toString() + hasMultipleInDegrees(cfg, curUnit));
             if (curUnit instanceof JIfStmt ifStmt) {
                 Value condition = ifStmt.getCondition();
                 Expr result = handleCalculate(condition, state);
@@ -237,10 +222,26 @@ public class PathAnalyze {
                 Unit branch1 = ifStmt.getTarget();
                 Unit branch2 = cfg.getUnexceptionalSuccsOf(curUnit).get(0);
                 if (result != null) {
+                    if(branchState.getBranchDepth() > Config.branchLimit && !AccessControlUtils.isAccessControlExpr(result)){
+                        Log.info("Branch Limit: " + branchState.getBranchDepth());
+                        //gen random value 0/1
+                        Random random = new Random();
+                        int randomValue = random.nextInt(2);
+                        if(randomValue == 0){
+                            branchState.addConstraint(result);
+                            doOne(branch1, branchState, false);
+                        }
+                        else{
+                            state.addConstraint(this.z3Ctx.mkNot(result));
+                            doOne(branch2, state, false);      
+                        }
+                        return;
+                    }
+
                     // condition is true
                     Log.info("|- IfStmt 1, condition TRUE: " + condition);
                     branchState.addConstraint(result);
-                    if (branchState.addInstCount(curUnit) <= Config.branchLimit
+                    if (branchState.addInstCount(curUnit) <= Config.LoopLimit
                             && (enableLazySolve || SymbolSolver.solveConstraintsSingle(this.z3Ctx,branchState.constraints))) {
                         doOne(branch1, branchState, false);
 
@@ -250,20 +251,35 @@ public class PathAnalyze {
                     // condition is false
                     Log.info("|- IfStmt 2, condition FALSE: !" + condition);
                     state.addConstraint(this.z3Ctx.mkNot(result));
-                    if (state.addInstCount(curUnit) <= Config.branchLimit + 1
+                    if (state.addInstCount(curUnit) <= Config.LoopLimit + 1
                             && (enableLazySolve || SymbolSolver.solveConstraintsSingle(this.z3Ctx,state.constraints))) {
                         doOne(branch2, state,  false);
                     } else {
                         Log.info("unsat branch");
                     }
-
                     return;
                 } else {
-                    if (branchState.addInstCount(curUnit) <= Config.branchLimit) {
+                    if(branchState.getBranchDepth() > Config.branchLimit && !AccessControlUtils.isAccessControlExpr(result)){
+                        Log.info("Branch Limit: " + branchState.getBranchDepth());
+                        //gen random value 0/1
+                        Random random = new Random();
+                        int randomValue = random.nextInt(2);
+                        if(randomValue == 0){
+                            doOne(branch1, branchState, false);
+                        }
+                        else{
+                            doOne(branch2, state, false);
+                        }
+                        return;
+                    }
+
+                    if (branchState.addInstCount(curUnit) <= Config.LoopLimit) {
+                        // TODO Add constraint 
                         Log.info("|- IfStmt 1, condition TRUE: " + condition);
                         doOne(branch1, branchState,  false);
                     }
-                    if (state.addInstCount(curUnit) <= Config.branchLimit + 1) {
+                    if (state.addInstCount(curUnit) <= Config.LoopLimit + 1) {
+                        // TODO Add constraint 
                         Log.info("|- IfStmt 2, condition FALSE: !" + condition);
                         doOne(branch2, state, false);
                     }
@@ -427,6 +443,8 @@ public class PathAnalyze {
 
 
     public void handleInvoke(Unit curUnit, SimState state) {
+
+
         // get invoke expr
         InvokeExpr expr = null;
         if(curUnit instanceof JInvokeStmt invokeStmt){
@@ -551,9 +569,30 @@ public class PathAnalyze {
         OnTheFlyJimpleBasedICFG cfg = new OnTheFlyJimpleBasedICFG(callee);
         Boolean hasActiveBody = callee.hasActiveBody();
 
+        // if(state.callDepth > Config.depthLimit){
+        //     Log.info("Call Depth Limit: " + state.callDepth);
+        //     Unit ret = postInvoke(state);
+        //     doOne(ret, state, true);
+        //     return;
+        // }
+        // if(state.visitedMethods.contains(callee)){
+        //     Log.info("Already Visited: " + callee.getName());
+        //     Unit ret = postInvoke(state);
+        //     doOne(ret, state, true);
+        //     return;
+        // }
         // handle normal case
-        if(  hasActiveBody && (entryMethod.getDeclaringClass().getName().contains(className) || StaticAPIs.ANALYZE_CLASS_SET.contains(methodName) || (enableInterAnalysis && this.CheckMethods.contains(callee) ) )  ) {
-           
+
+        boolean isAccessControl = false;
+        for(Value arg : expr.getArgs()){
+            if(AccessControlUtils.isAccessControlExpr(valueToExpr(arg, state))){
+                isAccessControl = true;
+                break;
+            }
+        }
+
+        if(isAccessControl||  hasActiveBody && ( (enableInterAnalysis && this.CheckMethods.contains(callee) ) )  ) {
+            state.visitedMethods.add(callee);
             analyzeMethod(callee, state);
             return;
         } else { // DO NOTHING
@@ -596,10 +635,12 @@ public class PathAnalyze {
         state.pushLocalMap();
         state.pushParam(params);
         state.pushCFG();
+        state.callDepth++;
     }
 
 
     public Unit postInvoke(SimState state) {
+        state.callDepth--;
         state.popCFG();
         state.popParam();
         state.popLocalMap();
@@ -607,61 +648,78 @@ public class PathAnalyze {
     }
 
     // ============================================================================================
+    // public void printSimplifyConstaints(List<Expr> constraints) {
+    //     Log.info("================== [Solve] ========================");
+    //     Context ctx = this.z3Ctx;
+    //     Solver s = ctx.mkSolver();
+    //     List<Expr> idExpr = new ArrayList<>();
+    //     for (Expr c : constraints) {
+    //         if (AccessControlUtils.isAccessControlExpr(c)) {
+    //             if (AccessControlUtils.isUIDExpr(c) || AccessControlUtils.isPIDExpr(c)) {
+    //                 idExpr.add(c);
+    //             } else {
+    //                 s.add(c);
+    //             }
+    //         }
+    //     }
+
+    //     // list all symbol and remove which is not constaint
+
+    //     while (s.check() == com.microsoft.z3.Status.SATISFIABLE) {
+    //         Model model = s.getModel();
+    //         Map<Expr, Expr> currentSolution = new HashMap<>();
+    //         List<String> r = new ArrayList<>();
+    //         // 获取并输出符号的解
+    //         for (FuncDecl<?> decl : model.getConstDecls()) {
+    //             String symbolName = decl.getName().toString();
+    //             Expr<?> value = model.getConstInterp(decl);
+
+    //             // put and print
+
+    //             String result = symbolName + " = " + value;
+    //             Log.info(result);
+    //             r.add(result);
+
+    //             currentSolution.put(ctx.mkConst(decl), value);
+    //         }
+
+    //         for (Expr e : idExpr) {
+    //             Log.info(e.toString());
+    //             r.add(e.toString());
+    //         }
+    //         analyzeResult.add(r);
+
+    //         // 添加约束以避免找到相同的解
+    //         List<BoolExpr> blockingClause = new ArrayList<>();
+    //         for (Map.Entry<Expr, Expr> entry : currentSolution.entrySet()) {
+    //             blockingClause.add(ctx.mkNot(ctx.mkEq(entry.getKey(),
+    //                     entry.getValue())));
+    //         }
+    //         s.add(ctx.mkOr(blockingClause.toArray(new BoolExpr[0])));
+    //         Log.info("----------------------------------------\n");
+    //     }
+
+    //     Log.info("===================================================");
+    //     return;
+    // }
     public void printSimplifyConstaints(List<Expr> constraints) {
         Log.info("================== [Solve] ========================");
-        Solver s = this.z3Ctx.mkSolver();
-        List<Expr> idExpr = new ArrayList<>();
-        for (Expr c : constraints) {
-            if (AccessControlUtils.isAccessControlExpr(c)) {
-                if (AccessControlUtils.isUIDExpr(c) || AccessControlUtils.isPIDExpr(c)) {
-                    idExpr.add(c);
-                } else {
-                    s.add(c);
-                }
+        Context ctx = this.z3Ctx;
+        List<Expr> toSolve = new ArrayList<>();
+        for(Expr e : constraints){
+            if(AccessControlUtils.isAccessControlExpr(e)){
+                toSolve.add(e);
             }
         }
-
-        // list all symbol and remove which is not constaint
-
-        while (s.check() == com.microsoft.z3.Status.SATISFIABLE) {
-
-            Model model = s.getModel();
-            Map<Expr, Expr> currentSolution = new HashMap<>();
-            List<String> r = new ArrayList<>();
-            // 获取并输出符号的解
-            for (FuncDecl<?> decl : model.getConstDecls()) {
-                String symbolName = decl.getName().toString();
-                Expr<?> value = model.getConstInterp(decl);
-
-                // put and print
-
-                String result = symbolName + " = " + value;
-                Log.info(result);
-                r.add(result);
-
-                currentSolution.put(this.z3Ctx.mkConst(decl), value);
-            }
-
-            for (Expr e : idExpr) {
-                Log.info(e.toString());
-                r.add(e.toString());
-            }
-            analyzeResult.add(r);
-
-            // 添加约束以避免找到相同的解
-            List<BoolExpr> blockingClause = new ArrayList<>();
-            for (Map.Entry<Expr, Expr> entry : currentSolution.entrySet()) {
-                blockingClause.add(this.z3Ctx.mkNot(this.z3Ctx.mkEq(entry.getKey(),
-                        entry.getValue())));
-            }
-            s.add(this.z3Ctx.mkOr(blockingClause.toArray(new BoolExpr[0])));
-            Log.info("----------------------------------------\n");
+        List<String> result = symbolSolver.solve(ctx, toSolve);
+        for(String s : result){
+            Log.info(s);
         }
+        this.analyzeResult.add(result);
 
         Log.info("===================================================");
         return;
     }
-
     public Set<List<String>> getAnalyzeResult() {
         Set<List<String>> uniqueLists = new LinkedHashSet<>();
         // 遍历原始列表，将其加入 Set 中

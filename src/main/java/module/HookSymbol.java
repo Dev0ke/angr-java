@@ -17,12 +17,18 @@ import utils.Log;
 
 import static accessControl.CheckPermissionAPI.*;
 
+
+
 public class HookSymbol {
+    public static final String UID_PREFIX = "<UID>";
+    public static final String PID_PREFIX = "<PID>";
+    public static final String APPOP_PREFIX = "<APPOP>";
+    public static final String PERMISSION_PREFIX = "<PERMISSION>";
     // TODO add uid limit
     public static Expr handleUidAPI(InvokeExpr expr, SimState state, Context z3Ctx) {
         String methodName = expr.getMethod().getName();
         if (methodName.equals("getCallingUid")) {
-            String symbolName = "UID::CallingUid";
+            String symbolName = UID_PREFIX + "CallingUid";
             Expr uidExpr = state.getSymbolByName(symbolName);
             if (uidExpr == null) {
                 uidExpr = z3Ctx.mkBVConst(symbolName, 32);
@@ -37,7 +43,7 @@ public class HookSymbol {
     public static Expr handlePidAPI(InvokeExpr expr, SimState state, Context z3Ctx) {
         String methodName = expr.getMethod().getName();
         if (methodName.equals("getCallingPid")) {
-            String symbolName = "PID::CallingPid";
+            String symbolName = PID_PREFIX + "CallingPid";
             Expr pidExpr = state.getSymbolByName(symbolName);
             if (pidExpr == null) {
                 pidExpr = z3Ctx.mkBVConst(symbolName, 32);
@@ -49,7 +55,7 @@ public class HookSymbol {
     }
 
     public static Expr handleMyPidAPI(InvokeExpr expr, SimState state, Context z3Ctx) {
-        String symbolName = "PID::MyPID";
+        String symbolName = PID_PREFIX + "MyPID";
         Expr pidExpr = state.getSymbolByName(symbolName);
         if (pidExpr == null) {
             pidExpr = z3Ctx.mkBVConst(symbolName, 32);
@@ -74,7 +80,7 @@ public class HookSymbol {
                 Log.error("Unsupported APPOP type: " + params.get(0).getClass());
                 return null;
             }
-            String symbolName = "AppOp::" + appOPSTR;
+            String symbolName = APPOP_PREFIX + appOPSTR;
 
             // create or get Expr
             Expr AppOpExpr = state.getSymbolByName(symbolName);
@@ -109,7 +115,7 @@ public class HookSymbol {
             }
 
             // create or get Expr
-            String permissionSymbolName = "Permission::" + permissionValue;
+            String permissionSymbolName = PERMISSION_PREFIX + permissionValue;
             Expr permissionExpr = state.getSymbolByName(permissionSymbolName);
             if (permissionExpr == null) {
                 permissionExpr = z3Ctx.mkBVConst(permissionSymbolName, 32);
@@ -132,7 +138,7 @@ public class HookSymbol {
 
 
             // create or get Expr
-            String permissionSymbolName = "Permission::" + permissionValue;
+            String permissionSymbolName = PERMISSION_PREFIX + permissionValue;
             Expr permissionExpr = state.getSymbolByName(permissionSymbolName);
             if (permissionExpr == null) {
                 permissionExpr = z3Ctx.mkBVConst(permissionSymbolName, 32);

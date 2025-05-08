@@ -76,9 +76,9 @@ public class Main {
         SootEnv sootEnv = new SootEnv(androidJarPath, allFiles, Options.src_prec_apk);
         sootEnv.initEnv();
 
-        // HashMap<String,List<String>> apiList2 = APIFinder.findServiceAPI();
+        HashMap<String,List<String>> apiList1 = APIFinder.findServiceAPI();
         HashMap<String,List<String>> apiList2 = APIFinder.findProviderAPI();
-
+        apiList2.putAll(apiList1);
 
 
         // 5. 使用批处理方式处理任务
@@ -171,6 +171,7 @@ public class Main {
         ResultExporter resultExporter = new ResultExporter(Config.resultPath);
         List<Future<?>> futures = new ArrayList<>();
 
+
         for (Map.Entry<String, List<String>> entry : apiList.entrySet()) {
             String className = entry.getKey();
             List<String> methodList = entry.getValue();
@@ -221,7 +222,7 @@ public class Main {
 
     }
 
-    // // 抽取的辅助方法
+    // 抽取的辅助方法
     private static void processMethod(SootMethod m, String className, String methodSignature,
             ResultExporter resultExporter, AtomicInteger success) throws TimeoutException {
         long paStartTime = System.currentTimeMillis();
@@ -416,15 +417,15 @@ public class Main {
     }
 
     public static int APIversion = 23;
+    // public static String inputPath = "/public/android_6.0.1_r10/out/target/product/generic/system/";
     public static String inputPath = "/public/android_6.0.1_r10/out/target/product/mini-emulator-armv7-a-neon/system/";
-
     public static void main(String[] args) {
         init();
-        test_oppo();
-        // test_arc_api();
+        // test_oppo();
+        test_arc_api();
         // test_full_api();
-        // testOneBySign("com.android.server.wifi.WifiServiceImpl", "void setWifiApEnabled(android.net.wifi.WifiConfiguration,boolean)");
-
+        // testOneBySign("com.android.server.devicepolicy.DevicePolicyManagerService", "void setPasswordHistoryLength(android.content.ComponentName,int)");
+        // testOneBySign("com.android.server.TelephonyRegistry", "void notifyDataActivity(int)");
     }
 
 }

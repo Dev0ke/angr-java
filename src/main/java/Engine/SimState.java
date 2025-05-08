@@ -13,9 +13,10 @@ public class SimState {
         public Map<Value, Expr> curLocalMap;
         public ExceptionalUnitGraph curCFG;
         public List<Expr> constraints;
-        
+        public int callDepth;
         public Map<String, Integer> instCount;
         public Map<String, Expr> staticFieldMap;
+        public HashSet<SootMethod> visitedMethods;
 
         // stack
         public List<List<Expr>> paramList;
@@ -33,7 +34,9 @@ public class SimState {
             this.instCount = new HashMap<>();
             this.staticFieldMap = new HashMap<>();
             this.saveLocalMaps = new Stack<>();
+            this.visitedMethods = new HashSet<>();
             this.curCFG = null;
+            this.callDepth = 0;
         }
 
         // TODO FIX HASH COLLISION
@@ -48,6 +51,11 @@ public class SimState {
                 count = 1;
             }
             return count;
+        }
+
+
+        public int getBranchDepth() {
+            return instCount.size();
         }
 
         
@@ -198,6 +206,9 @@ public class SimState {
             dest.paramList.addAll(this.paramList);
             dest.saveLocalMaps.addAll(this.saveLocalMaps);
             dest.cfgStack.addAll(this.cfgStack);
+
+            dest.visitedMethods.addAll(this.visitedMethods);
+            dest.callDepth = this.callDepth;
         }
 
         public SimState copy() {
@@ -216,6 +227,7 @@ public class SimState {
             this.instCount.clear();
             this.staticFieldMap.clear();
             this.saveLocalMaps.clear();
+            this.visitedMethods.clear();
         }
 
 }

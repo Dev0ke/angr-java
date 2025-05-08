@@ -2,12 +2,15 @@ package main;
 
 
 import soot.G;
+import soot.PackManager;
 import soot.Scene;
 import soot.SootClass;
 import soot.SootMethod;
 import soot.options.Options;
 import utils.Log;
 import java.util.*;
+
+import init.Config;
 
 public class SootEnv {
 
@@ -61,7 +64,7 @@ public class SootEnv {
         Options.v().set_whole_program(true);  // 启用整个程序分析
         Options.v().set_verbose(true);
         
-
+        Options.v().set_wrong_staticness(Options.wrong_staticness_ignore);
         //call graph
         // Options.v().setPhaseOption("cg.spark", "on");
         
