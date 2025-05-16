@@ -45,7 +45,7 @@ public class Main {
         Log.initLogLevel();
     }
 
-    public static void test_full_api() {
+    public static void test_full_api(String inputPath,int APIversion) {
 
         // 1. 预先加载API列表
         HashMap<String, List<String>> apiList = readAPIfromFile(Config.AOSP_601_ARCADE);
@@ -57,7 +57,7 @@ public class Main {
         AtomicInteger errorCount = new AtomicInteger(0);
 
         // 3. 优化线程池配置
-        int processors = Runtime.getRuntime().availableProcessors();
+        int processors = Config.threads;
         ThreadPoolExecutor executor = new ThreadPoolExecutor(
                 processors, // 核心线程数
                 processors * 2, // 最大线程数
@@ -138,10 +138,10 @@ public class Main {
 
     }
 
-    public static void test_arc_api() {
+    public static void test_arc_api(String arcade_api_path,int APIversion,String inputPath) {
   
         // 1. 预先加载API列表
-        HashMap<String, List<String>> apiList = readAPIfromFile(Config.AOSP_601_ARCADE);
+        HashMap<String, List<String>> apiList = readAPIfromFile(arcade_api_path);
 
         // 2. 使用计数器对象替代原始类型，避免并发问题
         AtomicInteger count = new AtomicInteger(0);
@@ -266,20 +266,25 @@ public class Main {
 
     public static void testByMethodName(String className, String methodName) {
 
-        String androidJarPath = JimpleConverter.getAndroidJarpath(APIversion);
-        List<String> allFiles = FirmwareUtils.findAllFiles(inputPath);
+        String androidJarPath = JimpleConverter.getAndroidJarpath(defaultAPIversion);
+        List<String> allFiles = FirmwareUtils.findAllFiles(defaultinputPath);
         FirmwareUtils.removeErrorFile(allFiles);
         Log.info("[-] Total files: " + allFiles.size());
         SootEnv sootEnv = new SootEnv(androidJarPath, allFiles, Options.src_prec_apk);
         sootEnv.initEnv();
         SootMethod m2 = sootEnv.getMethodByName(className, methodName);
         Log.info("[-] " + m2.getSubSignature());
+        CheckFinder cf = new CheckFinder(m2);
+        HashSet<SootMethod> result = cf.runFind();
+        PathAnalyze pa = new PathAnalyze(m2,result);
+        pa.startAnalyze();
+        
     }
 
     public static void testOneBySign(String className, String signature) {
 
-        String androidJarPath = JimpleConverter.getAndroidJarpath(APIversion);
-        List<String> allFiles = FirmwareUtils.findAllFiles(inputPath);
+        String androidJarPath = JimpleConverter.getAndroidJarpath(defaultAPIversion);
+        List<String> allFiles = FirmwareUtils.findAllFiles(defaultinputPath);
         FirmwareUtils.removeErrorFile(allFiles);
         Log.info("[-] Total files: " + allFiles.size());
 
@@ -416,16 +421,20 @@ public class Main {
         return apiMap;
     }
 
-    public static int APIversion = 23;
-    // public static String inputPath = "/public/android_6.0.1_r10/out/target/product/generic/system/";
-    public static String inputPath = "/public/android_6.0.1_r10/out/target/product/mini-emulator-armv7-a-neon/system/";
+    public static String inputPath_6 = "/mnt/hd1/devoke/AOSP6.0.1_r10/out/target/product/mini-emulator-armv7-a-neon/system/";
+    public static String inputPath_7 = "/mnt/hd1/devoke/AOSP7.0/out/target/product/mini-emulator-armv7-a-neon/system/";
+    public static int defaultAPIversion = 24;
+    public static String defaultinputPath = inputPath_7;
+
     public static void main(String[] args) {
         init();
         // test_oppo();
-        test_arc_api();
+        // test_arc_api(Config.AOSP_601_ARCADE, 23, inputPath_6);
+        // test_arc_api(Config.AOSP_7_ARCADE, 24, inputPath_7);
         // test_full_api();
-        // testOneBySign("com.android.server.devicepolicy.DevicePolicyManagerService", "void setPasswordHistoryLength(android.content.ComponentName,int)");
+        // testOneBySign("com.android.server.ConnectivityService", "boolean requestRouteToHostAddress(int,byte[])");
         // testOneBySign("com.android.server.TelephonyRegistry", "void notifyDataActivity(int)");
+        testByMethodName("android.provider.Settings", "checkAndNoteChangeNetworkStateOperation");
     }
 
 }

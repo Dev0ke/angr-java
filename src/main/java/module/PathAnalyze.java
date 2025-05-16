@@ -4,14 +4,19 @@ import accessControl.*;
 
 import init.Config;
 
-
-import com.microsoft.z3.*;
+import com.microsoft.z3.ArrayExpr;
+import com.microsoft.z3.BitVecExpr;
+import com.microsoft.z3.BitVecNum;
 import com.microsoft.z3.Context;
 import com.microsoft.z3.Expr;
+import com.microsoft.z3.SeqExpr;
 
 import Engine.Expression;
 import Engine.SimState;
+import Engine.SymArray;
 import Engine.SymbolSolver;
+
+
 import soot.*;
 import soot.jimple.*;
 import soot.jimple.internal.*;
@@ -33,13 +38,13 @@ public class PathAnalyze {
     public List<List<String>> analyzeResult;
     public HashSet<SootMethod> CheckMethods;
 
+    private static final Map<String, String> DEFAULT_CTX_CONFIG = Map.of("model", "true");
+
     public PathAnalyze(SootMethod entryMethod,HashSet<SootMethod> CheckMethods) {
         this.CheckMethods = CheckMethods;
         this.entryMethod = entryMethod;
         this.analyzeResult = new ArrayList<>();
-        HashMap<String, String> ctxConfig = new HashMap<String, String>();
-        ctxConfig.put("model", "true");
-        this.z3Ctx = new Context(ctxConfig);
+        this.z3Ctx = new Context(DEFAULT_CTX_CONFIG);
         this.enableSolve = false;
 
         // start
@@ -49,18 +54,17 @@ public class PathAnalyze {
 
     public void makeParamsSymbol(SootMethod m, SimState state) {
         //get soot params of soot method
-        Log.info(m.toString());
+        // Log.info(m.toString());
         List<Type> paramTypes = m.getParameterTypes();
         List<Expr> entryParams = new ArrayList<>();
         for(int i = 0; i < paramTypes.size(); i++){
             Type paramType = paramTypes.get(i);
-            Expr paramExpr = Expression.makeSymbol(this.z3Ctx,paramType,"TYPE_PARAM" + i);
+            Expr paramExpr = Expression.makeSymbol(this.z3Ctx,paramType,"<PARAM>" + i);
             entryParams.add(paramExpr);
         }
         state.pushParam(entryParams);
 
     }
-
 
     public Expr valueToExpr(Value operand,SimState state){
         Expr v = null;
@@ -70,7 +74,10 @@ public class PathAnalyze {
             v = state.getExpr(operand);
         else if(operand instanceof StaticFieldRef staticRef)
             v = state.getStaticExpr(staticRef);
-        else {
+        else if(operand instanceof JArrayRef arrayRef){
+            Value base = arrayRef.getBase();
+            v = state.getObject(base);
+        } else{
             Log.error("Unsupported value type: " + operand.getClass());
         }
         return v;
@@ -95,6 +102,8 @@ public class PathAnalyze {
         }
         return initState;
     }
+
+    public void handleArrayAssign(JAssignStmt assignStmt, SimState state){}
 
     public static boolean hasMultipleInDegrees(UnitGraph cfg, Unit unit) {
         List<Unit> predecessors = cfg.getPredsOf(unit);
@@ -212,7 +221,7 @@ public class PathAnalyze {
         }
 
         while (curUnit != null) {
-            Log.info(curUnit.toString() + hasMultipleInDegrees(cfg, curUnit));
+            Log.info(curUnit.toString());
             if (curUnit instanceof JIfStmt ifStmt) {
                 Value condition = ifStmt.getCondition();
                 Expr result = handleCalculate(condition, state);
@@ -287,7 +296,9 @@ public class PathAnalyze {
 
                 }
 
-            } else if (curUnit instanceof JAssignStmt assignStmt) {
+            }
+            
+            else if (curUnit instanceof JAssignStmt assignStmt) {
                 Value left = assignStmt.getLeftOp();
                 Value right = assignStmt.getRightOp();
                 Expr v = null;
@@ -304,13 +315,29 @@ public class PathAnalyze {
                 } else if (right instanceof JCastExpr cast) {
                     v = handleCastExpr(this.z3Ctx,cast, state);
                 } else if (right instanceof JNewExpr newExpr) {
-                    if (newExpr.getBaseType().toString().equals("java.lang.SecurityException")) {
+                    Type type = newExpr.getBaseType();
+                    if (type.toString().equals("java.lang.SecurityException")) {
                         Log.info("SecurityException branch. Terminate.");
                         return;
                     } else {
                         Log.error("Unsupported right type: " + right.getClass());
                     }
-                } else if (right instanceof InvokeExpr) {
+                } else if(right instanceof JNewArrayExpr newArrayExpr){
+                    v = SymArray.makeArray(this.z3Ctx, newArrayExpr,newArrayExpr.toString());
+                } else if(right instanceof JLengthExpr lengthExpr){
+                    Value src = lengthExpr.getOp();
+                    Expr srcExpr = valueToExpr(src, state);
+                    if(srcExpr instanceof SeqExpr seqExpr){
+                        // TODO
+                        v = SymArray.lengthOf(this.z3Ctx, seqExpr);
+                    } else{
+                        Log.error("Unsupported length type: " + srcExpr.getClass());
+                    }
+
+                }
+                
+                
+                else if (right instanceof InvokeExpr) {
                     preInvoke(curUnit, state);
                     handleInvoke(curUnit, state);
                     return;
@@ -321,12 +348,32 @@ public class PathAnalyze {
                 // TODO ADD FIELD ref
                 if (left instanceof JInstanceFieldRef) {
                     // TODO
-                } else if (left instanceof StaticFieldRef staticRef) {
+                } else if (left instanceof JArrayRef arrayRef) {
+                    // TODO
+                    Value arrayValue = arrayRef.getBase();
+                    Expr arrayExpr = valueToExpr(arrayValue, state);
+                    if(arrayExpr != null && v != null && arrayExpr instanceof SeqExpr seqExpr){
+                        Value index = arrayRef.getIndex();
+                        Expr indexExpr = valueToExpr(index, state);
+                        if(indexExpr instanceof BitVecExpr bitVecExpr){
+                            SymArray.set(this.z3Ctx, seqExpr, bitVecExpr, v);
+                        }
+                        else{
+                            Log.error("Unsupported index type: " + indexExpr.getClass());
+                        }
+
+                    } else{
+                        Log.error("Unsupported JArrayRef: " + arrayRef.toString());
+                    }
+                }
+                else if (left instanceof StaticFieldRef staticRef) {
                     if (v != null)
                         state.addStaticField(staticRef, v);
                 } else if (left instanceof Local l) {
                     if (v != null)
                         state.addExpr(l, v);
+                } else if (left instanceof JArrayRef arrayRef) {
+                    Log.error("Unsupported JArrayRef: " + arrayRef.toString());
                 }
 
             } else if (curUnit instanceof JLookupSwitchStmt switchStmt) {
@@ -487,7 +534,7 @@ public class PathAnalyze {
                         throwState.addConstraint(permissionValue);
                         doOne(exceptionHandler, throwState, false);
                         return;
-                    }
+                    } 
                 }
 
                 Unit ret = postInvoke(state);
@@ -502,68 +549,69 @@ public class PathAnalyze {
                 doOne(ret, state, true);
                 return;
             }
-        } else if (CheckUidAPI.allClassNames.contains(className) && methodName.equals("getCallingUid")) {
-            Log.warn("[+] Find UID API: " + className + "." + methodName);
-            Expr e = HookSymbol.handleUidAPI(expr, state, this.z3Ctx);
-            if (e != null) {
-                Unit ret = postInvoke(state);
-                if (ret instanceof AssignStmt assign) {
-                    Value left = assign.getLeftOp();
-                    updateValue(left, e, state);
-                } else {
-                    Log.error("Unsupported Ret Unit type:  " + ret.getClass());
-                }
-                doOne(ret, state, true);
-                return;
-            }
-        } else if (CheckPidAPI.allClassNames.contains(className) && methodName.equals("getCallingPid")) {
-            Log.warn("[+] Find PID API: " + className + "." + methodName);
-            Expr e = HookSymbol.handlePidAPI(expr, state, this.z3Ctx);
-            if (e != null) {
-                Unit ret = postInvoke(state);
-                if (ret instanceof AssignStmt assign) {
-                    Value left = assign.getLeftOp();
-                    updateValue(left, e, state);
-                } else {
-                    Log.error("Unsupported Ret Unit type: " + ret.getClass());
-                }
-                doOne(ret, state, true);
-                return;
-            }
-        } else if (CheckAppOpAPI.getAllClassName().contains(className)) {
-            Log.warn("[+] Find AppOp API: " + className + "." + methodName);
-            Expr e = HookSymbol.handleAppOpAPI(expr, state, this.z3Ctx);
-            if (e != null) {
-                Unit ret = postInvoke(state);
-                if (ret instanceof AssignStmt assign) {
-                    Value left = assign.getLeftOp();
-                    updateValue(left, e, state);
-                } else {
-                    Log.error("Unsupported Ret Unit type:  " + ret.getClass());
-                }
-                doOne(ret, state, true);
-                return ;
-            }
         }
+        // } else if (CheckUidAPI.allClassNames.contains(className) && methodName.equals("getCallingUid")) {
+        //     Log.warn("[+] Find UID API: " + className + "." + methodName);
+        //     Expr e = HookSymbol.handleUidAPI(expr, state, this.z3Ctx);
+        //     if (e != null) {
+        //         Unit ret = postInvoke(state);
+        //         if (ret instanceof AssignStmt assign) {
+        //             Value left = assign.getLeftOp();
+        //             updateValue(left, e, state);
+        //         } else {
+        //             Log.error("Unsupported Ret Unit type:  " + ret.getClass());
+        //         }
+        //         doOne(ret, state, true);
+        //         return;
+        //     }
+        // } else if (CheckPidAPI.allClassNames.contains(className) && methodName.equals("getCallingPid")) {
+        //     Log.warn("[+] Find PID API: " + className + "." + methodName);
+        //     Expr e = HookSymbol.handlePidAPI(expr, state, this.z3Ctx);
+        //     if (e != null) {
+        //         Unit ret = postInvoke(state);
+        //         if (ret instanceof AssignStmt assign) {
+        //             Value left = assign.getLeftOp();
+        //             updateValue(left, e, state);
+        //         } else {
+        //             Log.error("Unsupported Ret Unit type: " + ret.getClass());
+        //         }
+        //         doOne(ret, state, true);
+        //         return;
+        //     }
+        // } else if (CheckAppOpAPI.getAllClassName().contains(className)) {
+        //     Log.warn("[+] Find AppOp API: " + className + "." + methodName);
+        //     Expr e = HookSymbol.handleAppOpAPI(expr, state, this.z3Ctx);
+        //     if (e != null) {
+        //         Unit ret = postInvoke(state);
+        //         if (ret instanceof AssignStmt assign) {
+        //             Value left = assign.getLeftOp();
+        //             updateValue(left, e, state);
+        //         } else {
+        //             Log.error("Unsupported Ret Unit type:  " + ret.getClass());
+        //         }
+        //         doOne(ret, state, true);
+        //         return ;
+        //     }
+        // }
 
-        else if (className.equals("java.lang.Exception")) {
-            Log.warn("Exception invoke. Terminate.");
-            return;
-        } else if (className.equals("android.os.Process") && methodName.equals("myPid")) {
-            Expr e = HookSymbol.handleMyPidAPI(expr, state, this.z3Ctx);
-            if (e != null) {
-                Unit ret = postInvoke(state);
-                if (ret instanceof AssignStmt assign) {
-                    Value left = assign.getLeftOp();
-                    updateValue(left, e, state);
-                } else {
-                    Log.error("Unsupported Ret Unit type:  " + ret.getClass());
-                }
+        // else if (className.equals("java.lang.Exception")) {
+        //     Log.warn("Exception invoke. Terminate.");
+        //     return;
+        // } else if (className.equals("android.os.Process") && methodName.equals("myPid")) {
+        //     Expr e = HookSymbol.handleMyPidAPI(expr, state, this.z3Ctx);
+        //     if (e != null) {
+        //         Unit ret = postInvoke(state);
+        //         if (ret instanceof AssignStmt assign) {
+        //             Value left = assign.getLeftOp();
+        //             updateValue(left, e, state);
+        //         } else {
+        //             Log.error("Unsupported Ret Unit type:  " + ret.getClass());
+        //         }
                 
-                doOne(ret, state, true);
-                return;
-            }
-        }
+        //         doOne(ret, state, true);
+        //         return;
+        //     }
+        // }
 
 
         OnTheFlyJimpleBasedICFG cfg = new OnTheFlyJimpleBasedICFG(callee);
@@ -583,15 +631,10 @@ public class PathAnalyze {
         // }
         // handle normal case
 
-        boolean isAccessControl = false;
-        for(Value arg : expr.getArgs()){
-            if(AccessControlUtils.isAccessControlExpr(valueToExpr(arg, state))){
-                isAccessControl = true;
-                break;
-            }
-        }
+        boolean isAccessControl = expr.getArgs().stream()
+            .anyMatch(arg -> AccessControlUtils.isAccessControlExpr(valueToExpr(arg, state)));
 
-        if(isAccessControl||  hasActiveBody && ( (enableInterAnalysis && this.CheckMethods.contains(callee) ) )  ) {
+        if( isAccessControl ||  hasActiveBody && ( (enableInterAnalysis && this.CheckMethods.contains(callee) ) )  ) {
             state.visitedMethods.add(callee);
             analyzeMethod(callee, state);
             return;
@@ -710,6 +753,7 @@ public class PathAnalyze {
             if(AccessControlUtils.isAccessControlExpr(e)){
                 toSolve.add(e);
             }
+
         }
         List<String> result = symbolSolver.solve(ctx, toSolve);
         for(String s : result){

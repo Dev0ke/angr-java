@@ -4,13 +4,13 @@ import com.microsoft.z3.Expr;
 import soot.jimple.*;
 import java.util.*;
 import soot.*;
-import soot.toolkits.graph.DirectedGraph;
 import soot.toolkits.graph.ExceptionalUnitGraph;
 import utils.Log;
 
 public class SimState {
         public List<Expr> symbol;
         public Map<Value, Expr> curLocalMap;
+        public Map<Value, Expr> objectMap;
         public ExceptionalUnitGraph curCFG;
         public List<Expr> constraints;
         public int callDepth;
@@ -35,9 +35,25 @@ public class SimState {
             this.staticFieldMap = new HashMap<>();
             this.saveLocalMaps = new Stack<>();
             this.visitedMethods = new HashSet<>();
+            this.objectMap = new HashMap<>();
             this.curCFG = null;
             this.callDepth = 0;
         }
+
+
+        public void addObject(Value v, Expr e) {
+            this.objectMap.put(v, e);
+        }
+
+        public Expr getObject(Value v) {
+            return this.objectMap.get(v);
+        }
+
+        public void removeObject(Value v) {
+            this.objectMap.remove(v);
+        }
+        
+        
 
         // TODO FIX HASH COLLISION
         public int addInstCount(Unit u) {
@@ -195,6 +211,7 @@ public class SimState {
         public void copyTo(SimState dest) {
             dest.curCFG = this.curCFG;    
             dest.curLocalMap.putAll(this.curLocalMap);
+            dest.objectMap.putAll(this.objectMap);
             dest.constraints.addAll(this.constraints);
             dest.symbol.addAll(this.symbol);
 
@@ -228,6 +245,7 @@ public class SimState {
             this.staticFieldMap.clear();
             this.saveLocalMaps.clear();
             this.visitedMethods.clear();
+            this.objectMap.clear();
         }
 
 }

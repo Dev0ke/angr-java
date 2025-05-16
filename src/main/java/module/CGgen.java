@@ -121,14 +121,14 @@ public class CGgen {
         Options.v().set_allow_phantom_refs(true); // 找不到对应的源代码就被称作是虚类（phantom class） 允许虚类存在 不报错
         Options.v().set_no_bodies_for_excluded(true); // 不加载被排除的类 callgraph边会减少很多
         Options.v().set_wrong_staticness(Options.wrong_staticness_ignore); // 忽略静态性错误
-        if (Config.useExistJimple) {
-            Options.v().set_prepend_classpath(true);
-            Options.v().set_soot_classpath(Config.outputJimplePath);
-            Options.v().set_src_prec(Options.src_prec_jimple);
-            Options.v().set_process_dir(Collections.singletonList(Config.outputJimplePath));
-        } else {
+        // if (Config.useExistJimple) {
+        //     Options.v().set_prepend_classpath(true);
+        //     Options.v().set_soot_classpath(Config.outputJimplePath);
+        //     Options.v().set_src_prec(Options.src_prec_jimple);
+        //     Options.v().set_process_dir(Collections.singletonList(Config.outputJimplePath));
+        // } else {
             Options.v().set_process_dir(Collections.singletonList(Config.testInput2)); // 处理目录中的所有类
-        }
+        // }
 
 
 

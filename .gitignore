@@ -16,7 +16,7 @@ log/
 ### mine ###
 decheck_data/*
 *.log
-
+*.jar
 ### Eclipse ###
 .apt_generated
 .classpath

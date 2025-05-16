@@ -3,8 +3,8 @@ package init;
 public class Config {
 
     // Basic Config
-    public static int threads = 256;
-    public static boolean useExistJimple = true;
+    public static int threads = 128;
+    // public static boolean useExistJimple = true;
     public static String logLevel = "INFO";
     // Analysis Config
     public static boolean enableLazySolve = false;
@@ -24,6 +24,6 @@ public class Config {
 
     public static String inputFirmwarePath = "/home/devoke/decheck/decheck_data/system";
     public static String tempPath = "/home/devoke/decheck/decheck_data/temp";
-    public static String AOSP_7_ARCADE = "/home/devoke/decheck/decheck_data/test_api_list/arcade_api.txt";
+    public static String AOSP_7_ARCADE = "/home/devoke/decheck/decheck_data/test_api_list/arcade_api_AOSP_7.txt";
     public static String AOSP_601_ARCADE = "/home/devoke/decheck/decheck_data/test_api_list/arcade_api_AOSP_601.txt";
 }
