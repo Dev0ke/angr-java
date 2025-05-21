@@ -1,7 +1,7 @@
 package main;
 
 import accessControl.CheckAppOpAPI;
-import accessControl.CheckPermissionAPI;
+import accessControl.EnforcePermissionAPI;
 import accessControl.CheckPidAPI;
 import accessControl.CheckUidAPI;
 import module.APIFinder;
@@ -34,10 +34,11 @@ import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import module.ClearDetector;
-
+import accessControl.CheckPermissionAPI;
 public class Main {
 
     public static void init() {
+        EnforcePermissionAPI.init();
         CheckPermissionAPI.init();
         CheckUidAPI.init();
         CheckPidAPI.init();
@@ -45,10 +46,10 @@ public class Main {
         Log.initLogLevel();
     }
 
-    public static void test_full_api(String inputPath,int APIversion) {
+    public static void test_full_api(int APIversion,String inputPath) {
 
         // 1. 预先加载API列表
-        HashMap<String, List<String>> apiList = readAPIfromFile(Config.AOSP_601_ARCADE);
+        // HashMap<String, List<String>> apiList = readAPIfromFile(Config.AOSP_601_ARCADE);
 
         // 2. 使用计数器对象替代原始类型，避免并发问题
         AtomicInteger count = new AtomicInteger(0);
@@ -56,6 +57,7 @@ public class Main {
         AtomicInteger timeoutCount = new AtomicInteger(0);
         AtomicInteger errorCount = new AtomicInteger(0);
 
+        
         // 3. 优化线程池配置
         int processors = Config.threads;
         ThreadPoolExecutor executor = new ThreadPoolExecutor(
@@ -76,10 +78,10 @@ public class Main {
         SootEnv sootEnv = new SootEnv(androidJarPath, allFiles, Options.src_prec_apk);
         sootEnv.initEnv();
 
-        HashMap<String,List<String>> apiList1 = APIFinder.findServiceAPI();
-        HashMap<String,List<String>> apiList2 = APIFinder.findProviderAPI();
+        HashMap<String,List<String>> apiList2 = APIFinder.findServiceAPI();
+        HashMap<String,List<String>> apiList1 = APIFinder.findProviderAPI();
         apiList2.putAll(apiList1);
-
+        // System.exit(0);
 
         // 5. 使用批处理方式处理任务
         ResultExporter resultExporter = new ResultExporter(Config.resultPath);
@@ -91,9 +93,9 @@ public class Main {
 
             // 6. 批量提交任务
             for (String methodSign : methodList) {
-                List<String> EXmethodSigns = apiList.get(className);
-                if(EXmethodSigns != null && EXmethodSigns.contains(methodSign))
-                    continue;
+                // List<String> EXmethodSigns = apiList2.get(className);
+                // if(EXmethodSigns != null && EXmethodSigns.contains(methodSign))
+                //     continue;
                 count.incrementAndGet();
                 Future<?> future = executor.submit(() -> {
                     try {
@@ -123,7 +125,7 @@ public class Main {
         // 8. 等待所有任务完成
         for (Future<?> future : futures) {
             try {
-                future.get(Config.timeout, TimeUnit.HOURS);
+                future.get(Config.timeout, TimeUnit.SECONDS);
             } catch (Exception e) {
                 Log.error("Task completion error: " + e.getMessage());
             }
@@ -235,6 +237,7 @@ public class Main {
         resultExporter.writeResult(ResultExporter.CODE_SUCCESS, className, methodSignature, result,
                 paEndTime - paStartTime, "");
         success.incrementAndGet();
+        pa.close();
     }
 
 
@@ -299,6 +302,10 @@ public class Main {
         // }
         PathAnalyze pa = new PathAnalyze(m2,result);
         pa.startAnalyze();
+        Set<List<String>> paresult = pa.getAnalyzeResult();
+        for (List<String> path : paresult) {
+            Log.info("-" + path);
+        }
     
     }
 
@@ -306,9 +313,8 @@ public class Main {
     public static void test_oppo() {
         AtomicInteger count = new AtomicInteger(0);
         AtomicInteger success = new AtomicInteger(0);
-        AtomicInteger timeoutCount = new AtomicInteger(0);
-        AtomicInteger errorCount = new AtomicInteger(0);
 
+        AtomicInteger errorCount = new AtomicInteger(0);
         // 3. 优化线程池配置
         int processors = Runtime.getRuntime().availableProcessors();
         ThreadPoolExecutor executor = new ThreadPoolExecutor(
@@ -347,9 +353,6 @@ public class Main {
 
             // 6. 批量提交任务
             for (String methodSign : methodList) {
-                // List<String> EXmethodSigns = apiList2.get(className);
-                // if(EXmethodSigns != null && EXmethodSigns.contains(methodSign))
-                //     continue;
                 count.incrementAndGet();
                 Future<?> future = executor.submit(() -> {
                     try {
@@ -431,10 +434,11 @@ public class Main {
         // test_oppo();
         // test_arc_api(Config.AOSP_601_ARCADE, 23, inputPath_6);
         // test_arc_api(Config.AOSP_7_ARCADE, 24, inputPath_7);
-        // test_full_api();
-        // testOneBySign("com.android.server.ConnectivityService", "boolean requestRouteToHostAddress(int,byte[])");
-        // testOneBySign("com.android.server.TelephonyRegistry", "void notifyDataActivity(int)");
-        testByMethodName("android.provider.Settings", "checkAndNoteChangeNetworkStateOperation");
+        // test_full_api(24, inputPath_7);
+        // test_full_api(23, inputPath_6); 
+        // testByMethodName("android.provider.Settings", "checkAndNoteChangeNetworkStateOperation");
+        testOneBySign("com.android.server.TelephonyRegistry","void notifyVoLteServiceStateChanged(android.telephony.VoLteServiceState)");
+        // testOneBySign("com.android.server.sip.SipService","android.net.sip.ISipSession getPendingSession(java.lang.String,java.lang.String)");
     }
 
 }

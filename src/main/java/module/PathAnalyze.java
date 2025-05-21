@@ -4,16 +4,14 @@ import accessControl.*;
 
 import init.Config;
 
-import com.microsoft.z3.ArrayExpr;
-import com.microsoft.z3.BitVecExpr;
-import com.microsoft.z3.BitVecNum;
 import com.microsoft.z3.Context;
 import com.microsoft.z3.Expr;
-import com.microsoft.z3.SeqExpr;
 
-import Engine.Expression;
 import Engine.SimState;
-import Engine.SymArray;
+import Engine.SymList;
+import Engine.SymBase;
+import Engine.SymGen;
+import Engine.SymString;
 import Engine.SymbolSolver;
 
 
@@ -46,46 +44,44 @@ public class PathAnalyze {
         this.analyzeResult = new ArrayList<>();
         this.z3Ctx = new Context(DEFAULT_CTX_CONFIG);
         this.enableSolve = false;
-
         // start
         Log.info("[+] Start PathAnalyze in API: " + this.entryMethod.getName());
 
     }
 
     public void makeParamsSymbol(SootMethod m, SimState state) {
-        //get soot params of soot method
         // Log.info(m.toString());
         List<Type> paramTypes = m.getParameterTypes();
-        List<Expr> entryParams = new ArrayList<>();
+        List<SymBase> entryParams = new ArrayList<>();
         for(int i = 0; i < paramTypes.size(); i++){
             Type paramType = paramTypes.get(i);
-            Expr paramExpr = Expression.makeSymbol(this.z3Ctx,paramType,"<PARAM>" + i);
+            SymBase paramExpr = SymGen.makeSymbol(this.z3Ctx,paramType,"<PARAM>x" + i);
             entryParams.add(paramExpr);
         }
         state.pushParam(entryParams);
 
     }
 
-    public Expr valueToExpr(Value operand,SimState state){
-        Expr v = null;
+    public SymBase valueToSym(Value operand,SimState state){
+        SymBase v = null;
         if(operand instanceof Constant constant)
-            v = Expression.makeConstantExpr(this.z3Ctx,constant);
-        else if(operand instanceof Local)
-            v = state.getExpr(operand);
+            v = SymGen.makeConstantExpr(this.z3Ctx,constant);
+        else if(operand instanceof JimpleLocal)
+            v = state.getSym(operand);
         else if(operand instanceof StaticFieldRef staticRef)
             v = state.getStaticExpr(staticRef);
         else if(operand instanceof JArrayRef arrayRef){
             Value base = arrayRef.getBase();
-            v = state.getObject(base);
+            v = state.getSym(base);
         } else{
             Log.error("Unsupported value type: " + operand.getClass());
         }
         return v;
     }
 
-    public void updateValue(Value v, Expr e, SimState state){
-        if(v instanceof Local)
-            state.addExpr(v, e);
+    public void updateValue(Value v, SymBase e, SimState state){
+        if(v instanceof JimpleLocal)
+            state.addSym(v, e);
         else if(v instanceof StaticFieldRef staticRef)
             state.addStaticField(staticRef, e);
         else
@@ -183,25 +179,62 @@ public class PathAnalyze {
 
 
 
-    public Expr handleCastExpr(Context z3Ctx,JCastExpr castExpr, SimState state){
-        Expr src = valueToExpr(castExpr.getOp(),state);
+    public static int SwitchCase2Int(List<IntConstant> caseValues, IntConstant key){
+        int size = caseValues.size();
+        List<Integer> sortedCaseValues = new ArrayList<>(size);
+        for(IntConstant c : caseValues){
+            sortedCaseValues.add(c.value);
+        }
+        Collections.sort(sortedCaseValues);
+        //find key
+        int mappedKey = sortedCaseValues.indexOf(key.value) + 1;
+        return mappedKey;
+    }
+
+
+    public static List<IntConstant> getCaseValuesFromTableSwitch(TableSwitchStmt tableSwitch) {
+        List<IntConstant> caseValues = new ArrayList<>();
+        int low = tableSwitch.getLowIndex();
+        int high = tableSwitch.getHighIndex();
+    
+        for (int i = low; i <= high; i++) {
+            caseValues.add(IntConstant.v(i));
+        }
+        return caseValues;
+    }
+
+    public SymBase handleCastExpr(Context z3Ctx,JCastExpr castExpr, SimState state){
+        SymBase src = valueToSym(castExpr.getOp(),state);
         Type type = castExpr.getType();
         //TODO 
         if(type instanceof RefType refType){
             return null;
         }
-        return Expression.makeCastExpr(z3Ctx,type,src);
+        return SymGen.makeCastExpr(z3Ctx,type,src);
     }
+
     // handle data flow for one unit
-    public Expr handleCalculate(Value expr, SimState state) {
+    public SymBase handleCalculate(Value expr, SimState state) {
         if(expr instanceof BinopExpr binopExpr){
-            Expr left = valueToExpr(binopExpr.getOp1(),state);
-            Expr right = valueToExpr(binopExpr.getOp2(),state);
-            return Expression.makeBinOpExpr(this.z3Ctx,binopExpr,left,right);
+            SymBase left = valueToSym(binopExpr.getOp1(),state);
+            if(left == null){
+                left = SymGen.makeSymbol(this.z3Ctx,binopExpr.getOp1().getType(),binopExpr.getOp1().toString());
+                updateValue(binopExpr.getOp1(), left, state);
+            }
+            SymBase right = valueToSym(binopExpr.getOp2(),state);
+            if(right == null){
+                right = SymGen.makeSymbol(this.z3Ctx,binopExpr.getOp2().getType(),binopExpr.getOp2().toString());
+                updateValue(binopExpr.getOp2(), right, state);
+            }
+            return SymGen.makeBinOpExpr(this.z3Ctx,binopExpr,left,right);
         }
         else if(expr instanceof UnopExpr unopExpr){
-            Expr src = valueToExpr(unopExpr.getOp(),state);
-            return Expression.makeUnOpExpr(this.z3Ctx,unopExpr,src);
+            SymBase op = valueToSym(unopExpr.getOp(),state);
+            if(op == null){
+                op = SymGen.makeSymbol(this.z3Ctx,unopExpr.getOp().getType(),unopExpr.getOp().toString());
+                updateValue(unopExpr.getOp(), op, state);
+            }
+            return SymGen.makeUnOpExpr(this.z3Ctx,unopExpr,op);
         }
         else{
             Log.error("Unsupported expression type: " + expr.getClass());
@@ -209,11 +242,20 @@ public class PathAnalyze {
         return null;
     }
 
+
+    
     public void doOne(Unit curUnit, SimState state, Boolean isFromReturn) {
+
+        /*   ------------------------------------------------   */
+        /*                    From Return                       */
+        /*   ------------------------------------------------   */
+
+
         ExceptionalUnitGraph cfg = state.getCurCFG();
         // handle return
         if (isFromReturn) {
             List<Unit> units = cfg.getUnexceptionalSuccsOf(curUnit);
+            Log.warn("Return to: " + cfg.getBody().getMethod().getName());
             for (Unit u : units) {
                 doOne(u, state, false);
             }
@@ -222,75 +264,114 @@ public class PathAnalyze {
 
         while (curUnit != null) {
             Log.info(curUnit.toString());
+
+            /*   ------------------------------------------------   */
+            /*                         If                           */
+            /*   ------------------------------------------------   */
+
             if (curUnit instanceof JIfStmt ifStmt) {
                 Value condition = ifStmt.getCondition();
-                Expr result = handleCalculate(condition, state);
+                SymBase result = handleCalculate(condition, state);
                 
                 // copy current state
                 SimState branchState = state.copy();
-                Unit branch1 = ifStmt.getTarget();
-                Unit branch2 = cfg.getUnexceptionalSuccsOf(curUnit).get(0);
+                Unit branch_true = ifStmt.getTarget();
+                Unit branch_false = cfg.getUnexceptionalSuccsOf(curUnit).get(0);
                 if (result != null) {
-                    if(branchState.getBranchDepth() > Config.branchLimit && !AccessControlUtils.isAccessControlExpr(result)){
+                    Expr resultExpr = result.getExpr();
+                    if(branchState.getBranchDepth() > Config.branchLimit  && !AccessControlUtils.isAccessControlSym(result)){
                         Log.info("Branch Limit: " + branchState.getBranchDepth());
-                        //gen random value 0/1
-                        Random random = new Random();
-                        int randomValue = random.nextInt(2);
-                        if(randomValue == 0){
-                            branchState.addConstraint(result);
-                            doOne(branch1, branchState, false);
+
+                        int choice = 0;
+                        int branchCount0 = branchState.getBranchCount(curUnit,0);
+                        int branchCount1 = branchState.getBranchCount(curUnit,1);
+                        if(branchCount0 > branchCount1){
+                            choice = 1;
+                        } else if(branchCount0 < branchCount1){
+                            choice = 0;
+                        } else {
+                            Random random = new Random();
+                            choice = random.nextInt(2);
                         }
-                        else{
-                            state.addConstraint(this.z3Ctx.mkNot(result));
-                            doOne(branch2, state, false);      
+
+                        // TRUE state
+                        if(choice == 0){ 
+                            branchState.addConstraint(resultExpr);
+                            branchState.addInstCount(curUnit,0);
+                            doOne(branch_true, branchState, false);
+                        }
+                        
+                        // FALSE state
+                        else{ 
+                            state.addConstraint(this.z3Ctx.mkNot(resultExpr));
+                            state.addInstCount(curUnit,1);
+                            doOne(branch_false, state, false);      
                         }
                         return;
                     }
 
-                    // condition is true
-                    Log.info("|- IfStmt 1, condition TRUE: " + condition);
-                    branchState.addConstraint(result);
-                    if (branchState.addInstCount(curUnit) <= Config.LoopLimit
-                            && (enableLazySolve || SymbolSolver.solveConstraintsSingle(this.z3Ctx,branchState.constraints))) {
-                        doOne(branch1, branchState, false);
-
-                    } else
-                        Log.info("unsat branch");
-
-                    // condition is false
-                    Log.info("|- IfStmt 2, condition FALSE: !" + condition);
-                    state.addConstraint(this.z3Ctx.mkNot(result));
-                    if (state.addInstCount(curUnit) <= Config.LoopLimit + 1
-                            && (enableLazySolve || SymbolSolver.solveConstraintsSingle(this.z3Ctx,state.constraints))) {
-                        doOne(branch2, state,  false);
+                    Log.info("|- IfStmt 1, condition [TRUE]: " + condition);
+                    branchState.addConstraint(resultExpr);
+                    if ((branchState.addInstCount(curUnit,0) <= Config.LoopLimit ||  AccessControlUtils.isAccessControlSym(result) ) ){
+                        if(enableLazySolve || SymbolSolver.solveConstraintsSingle(this.z3Ctx,branchState.constraints))
+                            doOne(branch_true, branchState, false);
+                        else
+                            Log.info("unsat branch");
                     } else {
-                        Log.info("unsat branch");
+                        Log.info("Limit branch");
+                    }
+
+             
+                    Log.info("|- IfStmt 2, condition [FALSE]: not " + condition);
+                    state.addConstraint(this.z3Ctx.mkNot(resultExpr));
+                    if ((state.addInstCount(curUnit,1) <= Config.LoopLimit ||  AccessControlUtils.isAccessControlSym(result) ) ) {
+                        if(enableLazySolve || SymbolSolver.solveConstraintsSingle(this.z3Ctx,state.constraints))
+                            doOne(branch_false, state,  false);
+                        else
+                            Log.info("unsat branch");
+                    } else {
+                        Log.info("Limit branch");
                     }
                     return;
+
                 } else {
-                    if(branchState.getBranchDepth() > Config.branchLimit && !AccessControlUtils.isAccessControlExpr(result)){
+                    if(branchState.getBranchDepth() > Config.branchLimit && !AccessControlUtils.isAccessControlSym(result)){
                         Log.info("Branch Limit: " + branchState.getBranchDepth());
-                        //gen random value 0/1
-                        Random random = new Random();
-                        int randomValue = random.nextInt(2);
-                        if(randomValue == 0){
-                            doOne(branch1, branchState, false);
+
+                        int choice = 0;
+                        int branchCount0 = branchState.getBranchCount(curUnit,0);
+                        int branchCount1 = branchState.getBranchCount(curUnit,1);
+                        if(branchCount0 > branchCount1){
+                            choice = 1;
+                        } else if(branchCount0 < branchCount1){
+                            choice = 0;
+                        } else {
+                            Random random = new Random();
+                            choice = random.nextInt(2);
                         }
-                        else{
-                            doOne(branch2, state, false);
+
+                        // choose branch
+                        if(choice == 0){
+                            // branchState.addConstraint(resultExpr);
+                            branchState.addInstCount(curUnit,0);
+                            doOne(branch_true, branchState, false);
+                        } else{
+                            // state.addConstraint(this.z3Ctx.mkNot(resultExpr));
+                            state.addInstCount(curUnit,1);
+                            doOne(branch_false, state, false);      
                         }
                         return;
                     }
 
-                    if (branchState.addInstCount(curUnit) <= Config.LoopLimit) {
+                    if (branchState.addInstCount(curUnit,0) <= Config.LoopLimit) {
                         // TODO Add constraint 
                         Log.info("|- IfStmt 1, condition TRUE: " + condition);
-                        doOne(branch1, branchState,  false);
+                        doOne(branch_true, branchState,  false);
                     }
-                    if (state.addInstCount(curUnit) <= Config.LoopLimit + 1) {
+                    if (state.addInstCount(curUnit,1) <= Config.LoopLimit) {
                         // TODO Add constraint 
                         Log.info("|- IfStmt 2, condition FALSE: !" + condition);
-                        doOne(branch2, state, false);
+                        doOne(branch_false, state, false);
                     }
                     return;
 
@@ -298,14 +379,18 @@ public class PathAnalyze {
 
             }
             
+            /*   ------------------------------------------------   */
+            /*                       Assign                         */
+            /*   ------------------------------------------------   */
+
             else if (curUnit instanceof JAssignStmt assignStmt) {
                 Value left = assignStmt.getLeftOp();
                 Value right = assignStmt.getRightOp();
-                Expr v = null;
-                if (right instanceof Local) {
-                    v = state.getExpr(right);
+                SymBase v = null;
+                if (right instanceof JimpleLocal) {
+                    v = state.getSym(right);
                 } else if (right instanceof Constant constant) {
-                    v = Expression.makeConstantExpr(this.z3Ctx, constant);
+                    v = SymGen.makeConstantExpr(this.z3Ctx, constant);
                 } else if (right instanceof StaticFieldRef staticRef) {
                     v = state.getStaticExpr(staticRef);
                 } else if (right instanceof BinopExpr binop) {
@@ -323,21 +408,37 @@ public class PathAnalyze {
                         Log.error("Unsupported right type: " + right.getClass());
                     }
                 } else if(right instanceof JNewArrayExpr newArrayExpr){
-                    v = SymArray.makeArray(this.z3Ctx, newArrayExpr,newArrayExpr.toString());
-                } else if(right instanceof JLengthExpr lengthExpr){
+                    // TODO
+                    v = SymGen.makeArray(this.z3Ctx, newArrayExpr,newArrayExpr.toString());
+                } else if(right instanceof JArrayRef arrayRef){
+                    Value index = arrayRef.getIndex();
+                    SymList symList = (SymList) valueToSym(arrayRef, state);
+                    if(symList != null){
+                        if(index instanceof IntConstant constant){
+                            int indexValue = constant.value;
+                            v = symList.get(indexValue);
+                        } else if(index instanceof JimpleLocal local){
+                            SymBase indexSym = state.getSym(local);
+                            v = symList.get(this.z3Ctx, indexSym,state);
+                        } else{
+                            Log.error("Unsupported index type: " + index.getClass());
+                        }
+                    } else {
+                        v = null;
+                    }
+                } 
+                
+                else if(right instanceof JLengthExpr lengthExpr){
                     Value src = lengthExpr.getOp();
-                    Expr srcExpr = valueToExpr(src, state);
-                    if(srcExpr instanceof SeqExpr seqExpr){
+                    SymBase sym = valueToSym(src, state);
+                    if(sym instanceof SymString symString){
                         // TODO
-                        v = SymArray.lengthOf(this.z3Ctx, seqExpr);
+                        v = symString.length(this.z3Ctx);
                     } else{
-                        Log.error("Unsupported length type: " + srcExpr.getClass());
+                        Log.error("Unsupported length type: " + sym.getClass());
                     }
 
-                }
-                
-                
-                else if (right instanceof InvokeExpr) {
+                } else if (right instanceof InvokeExpr) {
                     preInvoke(curUnit, state);
                     handleInvoke(curUnit, state);
                     return;
@@ -348,37 +449,76 @@ public class PathAnalyze {
                 // TODO ADD FIELD ref
                 if (left instanceof JInstanceFieldRef) {
                     // TODO
-                } else if (left instanceof JArrayRef arrayRef) {
-                    // TODO
-                    Value arrayValue = arrayRef.getBase();
-                    Expr arrayExpr = valueToExpr(arrayValue, state);
-                    if(arrayExpr != null && v != null && arrayExpr instanceof SeqExpr seqExpr){
-                        Value index = arrayRef.getIndex();
-                        Expr indexExpr = valueToExpr(index, state);
-                        if(indexExpr instanceof BitVecExpr bitVecExpr){
-                            SymArray.set(this.z3Ctx, seqExpr, bitVecExpr, v);
-                        }
-                        else{
-                            Log.error("Unsupported index type: " + indexExpr.getClass());
-                        }
+                // } else if (left instanceof JArrayRef arrayRef) {
+                //     // TODO
+                //     Value arrayValue = arrayRef.getBase();
+                //     SymBase sym = valueToSym(arrayValue, state);
+                //     if(sym instanceof SymArray symArray){
+                //         Value index = arrayRef.getIndex();
+                //         SymBase indexSym = valueToSym(index, state);
+                //         if(indexSym instanceof BitVecExpr bitVecExpr){
+                //             // SymArray.set(this.z3Ctx, seqExpr, bitVecExpr, v);
+                //         }
+                //         else{
+                //             Log.error("Unsupported index type: " + indexExpr.getClass());
+                //         }
 
-                    } else{
-                        Log.error("Unsupported JArrayRef: " + arrayRef.toString());
-                    }
+                //     } else{
+                //         Log.error("Unsupported JArrayRef: " + arrayRef.toString());
+                //     }
                 }
                 else if (left instanceof StaticFieldRef staticRef) {
                     if (v != null)
                         state.addStaticField(staticRef, v);
-                } else if (left instanceof Local l) {
+                } else if (left instanceof JimpleLocal l) {
                     if (v != null)
-                        state.addExpr(l, v);
+                        state.addSym(l, v);
                 } else if (left instanceof JArrayRef arrayRef) {
-                    Log.error("Unsupported JArrayRef: " + arrayRef.toString());
+                    SymList symList = (SymList) valueToSym(arrayRef, state);
+
+                    if(symList != null){
+                        Value index = arrayRef.getIndex();
+                        if(index instanceof IntConstant constant){
+                            int indexValue = constant.value;
+                            if(v != null){
+                                symList.set(indexValue, v);
+                            }
+                        }
+                        else{
+                            Log.error("Unsupported index type: " + index.getClass());
+                        }
+                    } else{
+                        Log.error("SymList null");
+                    }
                 }
 
-            } else if (curUnit instanceof JLookupSwitchStmt switchStmt) {
+            }
+
+            /*   ------------------------------------------------   */
+            /*                       Identity                       */
+            /*   ------------------------------------------------   */
+
+            else if (curUnit instanceof JIdentityStmt identityStmt) {
+                Value right = identityStmt.getRightOp();
+                Value left = identityStmt.getLeftOp();
+                if (right instanceof ParameterRef p) {
+                    int paramIndex = p.getIndex();
+                    SymBase param = state.getParam(paramIndex);
+                    if (param != null) {
+                        updateValue(left, param, state);
+                    }
+                } else {
+                    Log.error("Unsupported right type: " + right.getClass());
+                }
+            } 
+
+            /*   ------------------------------------------------   */
+            /*                     LookupSwitch                     */
+            /*   ------------------------------------------------   */
+
+            else if (curUnit instanceof JLookupSwitchStmt switchStmt) {
                 Value key = switchStmt.getKey();
-                Expr expr = state.getExpr(key);
+                SymBase sym = state.getSym(key);
 
                 // handle switch case
                 List<IntConstant> caseValues = switchStmt.getLookupValues();
@@ -386,29 +526,81 @@ public class PathAnalyze {
                     Unit target = switchStmt.getTargetForValue(ii.value);
                     Expr v = z3Ctx.mkBV(ii.value, 32);
                     SimState branchState = state.copy();
-                    if (expr != null) {
-                        branchState.addConstraint(z3Ctx.mkEq(expr, v));
-                        if (enableLazySolve || SymbolSolver.solveConstraintsSingle(this.z3Ctx,state.constraints)) {
+                    int caseIdx = SwitchCase2Int(caseValues, ii);
+                    if (sym != null) {
+                        branchState.addConstraint(z3Ctx.mkEq(sym.getExpr(), v));
+                        if ( (branchState.addInstCount(switchStmt, caseIdx) <= Config.LoopLimit || AccessControlUtils.isAccessControlSym(sym)) 
+                                && (enableLazySolve || SymbolSolver.solveConstraintsSingle(this.z3Ctx,state.constraints))  ) {
                             doOne(target, branchState, false);
                         }
-                    } else
+                    } else if(branchState.addInstCount(switchStmt, caseIdx) <= Config.LoopLimit){
                         doOne(target, branchState,false);
+                    }
                 }
 
                 // handle default case
                 Unit defaultTarget = switchStmt.getDefaultTarget();
                 SimState branchState = state.copy();
-                if (expr != null) {
+                if (sym != null) {
                     branchState.addConstraint(z3Ctx.mkNot(z3Ctx.mkOr(caseValues.stream()
-                            .map(ii -> z3Ctx.mkEq(expr, z3Ctx.mkBV(ii.value, 32))).toArray(Expr[]::new))));
-                    if (enableLazySolve || SymbolSolver.solveConstraintsSingle(this.z3Ctx,state.constraints)) {
+                            .map(ii -> z3Ctx.mkEq(sym.getExpr(), z3Ctx.mkBV(ii.value, 32))).toArray(Expr[]::new))));
+                    if ( (branchState.addInstCount(switchStmt, 0) <= Config.LoopLimit || AccessControlUtils.isAccessControlSym(sym)) 
+                                && (enableLazySolve || SymbolSolver.solveConstraintsSingle(this.z3Ctx,state.constraints))  ) {
                         doOne(defaultTarget, branchState,false);
                     }
                 } else
                     doOne(defaultTarget, branchState,  false);
                 return;
 
-            } else if (curUnit instanceof JInvokeStmt) {
+            }
+
+            /*   ------------------------------------------------   */
+            /*                     TableSwitch                      */
+            /*   ------------------------------------------------   */
+
+             else if (curUnit instanceof JTableSwitchStmt tableSwitchStmt) {
+                Value key = tableSwitchStmt.getKey();
+                SymBase sym = state.getSym(key);
+
+                // handle switch case
+                List<IntConstant> caseValues = getCaseValuesFromTableSwitch(tableSwitchStmt);
+                for (IntConstant ii : caseValues) {
+                    Unit target = tableSwitchStmt.getTargetForValue(ii.value);
+                    Expr v = z3Ctx.mkBV(ii.value, 32);
+                    SimState branchState = state.copy();
+                    int caseIdx = SwitchCase2Int(caseValues, ii);
+                    if (sym != null) {
+                        branchState.addConstraint(z3Ctx.mkEq(sym.getExpr(), v));
+                        if ( (branchState.addInstCount(tableSwitchStmt, caseIdx) <= Config.LoopLimit || AccessControlUtils.isAccessControlSym(sym))
+                                            && (enableLazySolve || SymbolSolver.solveConstraintsSingle(this.z3Ctx,state.constraints))  ) {
+                            doOne(target, branchState, false);
+                        }
+                    } else if(branchState.addInstCount(tableSwitchStmt, 0) <= Config.LoopLimit){
+                        doOne(target, branchState,false);
+                    }
+                }
+
+                // handle default case
+                Unit defaultTarget = tableSwitchStmt.getDefaultTarget();
+                SimState branchState = state.copy();
+                if (sym != null) {
+                    branchState.addConstraint(z3Ctx.mkNot(z3Ctx.mkOr(caseValues.stream()
+                            .map(ii -> z3Ctx.mkEq(sym.getExpr(), z3Ctx.mkBV(ii.value, 32))).toArray(Expr[]::new))));
+                    if ( (branchState.addInstCount(tableSwitchStmt, 0) <= Config.LoopLimit || AccessControlUtils.isAccessControlSym(sym))
+                                           && (enableLazySolve || SymbolSolver.solveConstraintsSingle(this.z3Ctx,state.constraints))  ) {
+                        doOne(defaultTarget, branchState,false);
+                    }
+                } else if(branchState.addInstCount(tableSwitchStmt, 0) <= Config.LoopLimit){
+                    doOne(defaultTarget, branchState,  false);
+                }
+                return;
+            }
+            
+            /*   ------------------------------------------------   */
+            /*                       Invoke                         */
+            /*   ------------------------------------------------   */               
+            
+            else if (curUnit instanceof JInvokeStmt) {
                 preInvoke(curUnit, state);
                 handleInvoke(curUnit, state);
                 return;
@@ -425,13 +617,18 @@ public class PathAnalyze {
             /* DO NOTHING */
           } else if (curUnit instanceof JExitMonitorStmt) {
             /* DO NOTHING */
-          } else if (curUnit instanceof JReturnStmt returnStmt) {
+          }
+            /*   ------------------------------------------------   */
+            /*                       Return                         */
+            /*   ------------------------------------------------   */     
+            
+            else if (curUnit instanceof JReturnStmt returnStmt) {
                 if (state.isCallStackEmpty()) {
                     if (enableSolve)
                         this.printSimplifyConstaints(state.constraints);
                 } else { 
                     Value retValue = returnStmt.getOp();
-                    Expr retExpr = valueToExpr(retValue,state);
+                    SymBase retExpr = valueToSym(retValue,state);
                     Unit ret = postInvoke(state);
                     if (ret instanceof AssignStmt assignStmt) {
                         Value left = assignStmt.getLeftOp();
@@ -444,8 +641,9 @@ public class PathAnalyze {
                     doOne(ret, state, true);
                 }
                 return;
-
-            } else if (curUnit instanceof JReturnVoidStmt) {
+            } 
+            
+            else if (curUnit instanceof JReturnVoidStmt) {
                 if (state.isCallStackEmpty()) {
                     if (enableSolve)// Entry method
                         this.printSimplifyConstaints(state.constraints);
@@ -455,27 +653,27 @@ public class PathAnalyze {
                 }
                 return;
 
-            } else if (curUnit instanceof JIdentityStmt identityStmt) {
-                Value right = identityStmt.getRightOp();
-                Value left = identityStmt.getLeftOp();
-                if (right instanceof ParameterRef p) {
-                    int paramIndex = p.getIndex();
-                    Expr param = state.getParam(paramIndex);
-                    if (param != null) {
-                        updateValue(left, param, state);
-                    }
-                } else {
-                    Log.error("Unsupported right type: " + right.getClass());
-                }
-            } else if (curUnit instanceof JGotoStmt gotoStmt) {
+            } 
+            
+
+
+
+            /*   ------------------------------------------------   */
+            /*                        Goto                          */
+            /*   ------------------------------------------------   */   
+
+
+           else if (curUnit instanceof JGotoStmt gotoStmt) {
                 Unit target = gotoStmt.getTarget();
                 doOne(target, state, false);
                 return;
             } else {
                 Log.error("Unhandle Unit: " + curUnit + curUnit.getClass());
             }
-            // end handle ,get next unit
-             
+
+            /*   ------------------------------------------------   */
+            /*                      Next Unit                       */
+            /*   ------------------------------------------------   */                
 
 
             List<Unit> nextUnits = cfg.getUnexceptionalSuccsOf(curUnit);
@@ -490,8 +688,6 @@ public class PathAnalyze {
 
 
     public void handleInvoke(Unit curUnit, SimState state) {
-
-
         // get invoke expr
         InvokeExpr expr = null;
         if(curUnit instanceof JInvokeStmt invokeStmt){
@@ -515,25 +711,25 @@ public class PathAnalyze {
         SootMethod callee = expr.getMethod();
         String methodName = callee.getName();
         String className = callee.getDeclaringClass().getName();
-
+        boolean isEnforcePermission = EnforcePermissionAPI.isEnforcePermissionAPI(className, methodName);
 
         //hook
-        if (CheckPermissionAPI.allClassNames.contains(className)) {
+        if (isEnforcePermission || CheckPermissionAPI.isCheckPermissionAPI(className, methodName)) {
             Log.warn("[+] Handle Permission API: " + className + "." + methodName);
-            Expr e = HookSymbol.handlePermissionAPI(expr, state, this.z3Ctx);
+            SymBase e = HookSymbol.handlePermissionAPI(this.z3Ctx, expr, state);
             if (e != null) {
                 //spceial case for enforce
                 //throw SecurityException
-                if(methodName.startsWith("enforce")){
+                if(isEnforcePermission){
                     SimState throwState = state.copy();
                     Unit exceptionHandler = getExceptionHandler(curUnit, throwState, Scene.v().getRefType("java.lang.SecurityException"));
                     if(exceptionHandler != null){ 
                         throwState.popConstraint();
-                        Expr permissionExpr = throwState.getLastSymbol();
-                        Expr permissionValue = this.z3Ctx.mkEq(permissionExpr, z3Ctx.mkBV(CheckPermissionAPI.PERMISSION_SOFT_DENIED, 32));
+                        SymBase permissionExpr = throwState.getLastSymbol();
+                        Expr permissionValue = this.z3Ctx.mkEq(permissionExpr.getExpr(), z3Ctx.mkBV(EnforcePermissionAPI.PERMISSION_SOFT_DENIED, 32));
                         throwState.addConstraint(permissionValue);
                         doOne(exceptionHandler, throwState, false);
-                        return;
+                        // return;
                     } 
                 }
 
@@ -541,7 +737,7 @@ public class PathAnalyze {
                 if (ret instanceof JAssignStmt assign) {
                     Value left = assign.getLeftOp();
                     updateValue(left, e, state);
-                } else if(ret instanceof JInvokeStmt ){
+                } else if(ret instanceof JInvokeStmt invokeStmt){
                     // VOID invoke
                 } else {
                     Log.error("Unsupported Ret Unit type: " + ret.getClass());
@@ -549,69 +745,69 @@ public class PathAnalyze {
                 doOne(ret, state, true);
                 return;
             }
+        
+        } else if (CheckUidAPI.allClassNames.contains(className) && methodName.equals("getCallingUid")) {
+            Log.warn("[+] Find UID API: " + className + "." + methodName);
+            SymBase e = HookSymbol.handleUidAPI(this.z3Ctx, expr, state);
+            if (e != null) {
+                Unit ret = postInvoke(state);
+                if (ret instanceof AssignStmt assign) {
+                    Value left = assign.getLeftOp();
+                    updateValue(left, e, state);
+                } else {
+                    Log.error("Unsupported Ret Unit type:  " + ret.getClass());
+                }
+                doOne(ret, state, true);
+                return;
+            }
+        } else if (CheckPidAPI.allClassNames.contains(className) && methodName.equals("getCallingPid")) {
+            Log.warn("[+] Find PID API: " + className + "." + methodName);
+            SymBase e = HookSymbol.handlePidAPI(this.z3Ctx, expr, state);
+            if (e != null) {
+                Unit ret = postInvoke(state);
+                if (ret instanceof AssignStmt assign) {
+                    Value left = assign.getLeftOp();
+                    updateValue(left, e, state);
+                } else {
+                    Log.error("Unsupported Ret Unit type: " + ret.getClass());
+                }
+                doOne(ret, state, true);
+                return;
+            }
+        } else if (CheckAppOpAPI.getAllClassName().contains(className)) {
+            Log.warn("[+] Find AppOp API: " + className + "." + methodName);
+            SymBase e = HookSymbol.handleAppOpAPI(this.z3Ctx, expr, state);
+            if (e != null) {
+                Unit ret = postInvoke(state);
+                if (ret instanceof AssignStmt assign) {
+                    Value left = assign.getLeftOp();
+                    updateValue(left, e, state);
+                } else {
+                    Log.error("Unsupported Ret Unit type:  " + ret.getClass());
+                }
+                doOne(ret, state, true);
+                return ;
+            }
         }
-        // } else if (CheckUidAPI.allClassNames.contains(className) && methodName.equals("getCallingUid")) {
-        //     Log.warn("[+] Find UID API: " + className + "." + methodName);
-        //     Expr e = HookSymbol.handleUidAPI(expr, state, this.z3Ctx);
-        //     if (e != null) {
-        //         Unit ret = postInvoke(state);
-        //         if (ret instanceof AssignStmt assign) {
-        //             Value left = assign.getLeftOp();
-        //             updateValue(left, e, state);
-        //         } else {
-        //             Log.error("Unsupported Ret Unit type:  " + ret.getClass());
-        //         }
-        //         doOne(ret, state, true);
-        //         return;
-        //     }
-        // } else if (CheckPidAPI.allClassNames.contains(className) && methodName.equals("getCallingPid")) {
-        //     Log.warn("[+] Find PID API: " + className + "." + methodName);
-        //     Expr e = HookSymbol.handlePidAPI(expr, state, this.z3Ctx);
-        //     if (e != null) {
-        //         Unit ret = postInvoke(state);
-        //         if (ret instanceof AssignStmt assign) {
-        //             Value left = assign.getLeftOp();
-        //             updateValue(left, e, state);
-        //         } else {
-        //             Log.error("Unsupported Ret Unit type: " + ret.getClass());
-        //         }
-        //         doOne(ret, state, true);
-        //         return;
-        //     }
-        // } else if (CheckAppOpAPI.getAllClassName().contains(className)) {
-        //     Log.warn("[+] Find AppOp API: " + className + "." + methodName);
-        //     Expr e = HookSymbol.handleAppOpAPI(expr, state, this.z3Ctx);
-        //     if (e != null) {
-        //         Unit ret = postInvoke(state);
-        //         if (ret instanceof AssignStmt assign) {
-        //             Value left = assign.getLeftOp();
-        //             updateValue(left, e, state);
-        //         } else {
-        //             Log.error("Unsupported Ret Unit type:  " + ret.getClass());
-        //         }
-        //         doOne(ret, state, true);
-        //         return ;
-        //     }
-        // }
 
-        // else if (className.equals("java.lang.Exception")) {
-        //     Log.warn("Exception invoke. Terminate.");
-        //     return;
-        // } else if (className.equals("android.os.Process") && methodName.equals("myPid")) {
-        //     Expr e = HookSymbol.handleMyPidAPI(expr, state, this.z3Ctx);
-        //     if (e != null) {
-        //         Unit ret = postInvoke(state);
-        //         if (ret instanceof AssignStmt assign) {
-        //             Value left = assign.getLeftOp();
-        //             updateValue(left, e, state);
-        //         } else {
-        //             Log.error("Unsupported Ret Unit type:  " + ret.getClass());
-        //         }
+        else if (className.equals("java.lang.Exception")) {
+            Log.warn("Exception invoke. Terminate.");
+            return;
+        } else if (className.equals("android.os.Process") && methodName.equals("myPid")) {
+            SymBase e = HookSymbol.handleMyPidAPI(this.z3Ctx, expr, state);
+            if (e != null) {
+                Unit ret = postInvoke(state);
+                if (ret instanceof AssignStmt assign) {
+                    Value left = assign.getLeftOp();
+                    updateValue(left, e, state);
+                } else {
+                    Log.error("Unsupported Ret Unit type:  " + ret.getClass());
+                }
                 
-        //         doOne(ret, state, true);
-        //         return;
-        //     }
-        // }
+                doOne(ret, state, true);
+                return;
+            }
+        }
 
 
         OnTheFlyJimpleBasedICFG cfg = new OnTheFlyJimpleBasedICFG(callee);
@@ -631,10 +827,15 @@ public class PathAnalyze {
         // }
         // handle normal case
 
-        boolean isAccessControl = expr.getArgs().stream()
-            .anyMatch(arg -> AccessControlUtils.isAccessControlExpr(valueToExpr(arg, state)));
+        boolean isAccessControl = false;
+        List<SymBase> paramList = state.getLastParam();
+        for(SymBase p : paramList){
+            if(AccessControlUtils.isAccessControlSym(p)){
+                isAccessControl = true;
+            }
+        }
 
-        if( isAccessControl ||  hasActiveBody && ( (enableInterAnalysis && this.CheckMethods.contains(callee) ) )  ) {
+        if( (isAccessControl || ( (enableInterAnalysis && this.CheckMethods.contains(callee) ) )) && hasActiveBody ) {
             state.visitedMethods.add(callee);
             analyzeMethod(callee, state);
             return;
@@ -668,10 +869,10 @@ public class PathAnalyze {
 
         // pass param
         List<Value> args = expr.getArgs();
-        List<Expr> params = new ArrayList<>();
+        List<SymBase> params = new ArrayList<>();
         for (int i = 0; i < args.size(); i++) {
             Value arg = args.get(i);
-            Expr e = valueToExpr(arg, state);
+            SymBase e = valueToSym(arg, state);
             params.add(e);
         }
         state.pushCall(curUnit);
@@ -690,61 +891,6 @@ public class PathAnalyze {
         return state.popCall();
     }
 
-    // ============================================================================================
-    // public void printSimplifyConstaints(List<Expr> constraints) {
-    //     Log.info("================== [Solve] ========================");
-    //     Context ctx = this.z3Ctx;
-    //     Solver s = ctx.mkSolver();
-    //     List<Expr> idExpr = new ArrayList<>();
-    //     for (Expr c : constraints) {
-    //         if (AccessControlUtils.isAccessControlExpr(c)) {
-    //             if (AccessControlUtils.isUIDExpr(c) || AccessControlUtils.isPIDExpr(c)) {
-    //                 idExpr.add(c);
-    //             } else {
-    //                 s.add(c);
-    //             }
-    //         }
-    //     }
-
-    //     // list all symbol and remove which is not constaint
-
-    //     while (s.check() == com.microsoft.z3.Status.SATISFIABLE) {
-    //         Model model = s.getModel();
-    //         Map<Expr, Expr> currentSolution = new HashMap<>();
-    //         List<String> r = new ArrayList<>();
-    //         // 获取并输出符号的解
-    //         for (FuncDecl<?> decl : model.getConstDecls()) {
-    //             String symbolName = decl.getName().toString();
-    //             Expr<?> value = model.getConstInterp(decl);
-
-    //             // put and print
-
-    //             String result = symbolName + " = " + value;
-    //             Log.info(result);
-    //             r.add(result);
-
-    //             currentSolution.put(ctx.mkConst(decl), value);
-    //         }
-
-    //         for (Expr e : idExpr) {
-    //             Log.info(e.toString());
-    //             r.add(e.toString());
-    //         }
-    //         analyzeResult.add(r);
-
-    //         // 添加约束以避免找到相同的解
-    //         List<BoolExpr> blockingClause = new ArrayList<>();
-    //         for (Map.Entry<Expr, Expr> entry : currentSolution.entrySet()) {
-    //             blockingClause.add(ctx.mkNot(ctx.mkEq(entry.getKey(),
-    //                     entry.getValue())));
-    //         }
-    //         s.add(ctx.mkOr(blockingClause.toArray(new BoolExpr[0])));
-    //         Log.info("----------------------------------------\n");
-    //     }
-
-    //     Log.info("===================================================");
-    //     return;
-    // }
     public void printSimplifyConstaints(List<Expr> constraints) {
         Log.info("================== [Solve] ========================");
         Context ctx = this.z3Ctx;
@@ -774,5 +920,9 @@ public class PathAnalyze {
         return uniqueLists;
     }
 
+    public void close(){
+        this.z3Ctx.close();
+
+    }
 
 }

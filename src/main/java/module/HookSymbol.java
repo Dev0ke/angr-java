@@ -3,21 +3,26 @@ package module;
 import java.util.ArrayList;
 import java.util.List;
 
+
 import com.microsoft.z3.BitVecNum;
 import com.microsoft.z3.Context;
 import com.microsoft.z3.Expr;
-import com.microsoft.z3.SeqExpr;
+
 
 import Engine.SimState;
 import accessControl.CheckAppOpAPI;
 import accessControl.CheckPermissionAPI;
+import accessControl.EnforcePermissionAPI;
 
 import soot.jimple.InvokeExpr;
 import utils.Log;
 
-import static accessControl.CheckPermissionAPI.*;
+import static accessControl.EnforcePermissionAPI.*;
 
-
+import Engine.SymBase;
+import Engine.SymGen;
+import Engine.SymPrim;
+import Engine.SymString;
 
 public class HookSymbol {
     public static final String UID_PREFIX = "<UID>";
@@ -25,57 +30,61 @@ public class HookSymbol {
     public static final String APPOP_PREFIX = "<APPOP>";
     public static final String PERMISSION_PREFIX = "<PERMISSION>";
     // TODO add uid limit
-    public static Expr handleUidAPI(InvokeExpr expr, SimState state, Context z3Ctx) {
+    public static SymBase handleUidAPI(Context ctx, InvokeExpr expr, SimState state) {
         String methodName = expr.getMethod().getName();
         if (methodName.equals("getCallingUid")) {
             String symbolName = UID_PREFIX + "CallingUid";
-            Expr uidExpr = state.getSymbolByName(symbolName);
-            if (uidExpr == null) {
-                uidExpr = z3Ctx.mkBVConst(symbolName, 32);
-                state.addSymbol(uidExpr);
+            SymBase uid = state.getSymbolByName(symbolName);
+            if (uid == null) {
+                uid = SymGen.makeIntSym(ctx, symbolName);
+                state.addSymbol(uid);
             }
-            return uidExpr;
+            return uid;
         }
         return null;
     }
 
     // TODO add uid limit
-    public static Expr handlePidAPI(InvokeExpr expr, SimState state, Context z3Ctx) {
+    public static SymBase handlePidAPI(Context ctx, InvokeExpr expr, SimState state) {
         String methodName = expr.getMethod().getName();
         if (methodName.equals("getCallingPid")) {
             String symbolName = PID_PREFIX + "CallingPid";
-            Expr pidExpr = state.getSymbolByName(symbolName);
-            if (pidExpr == null) {
-                pidExpr = z3Ctx.mkBVConst(symbolName, 32);
-                state.addSymbol(pidExpr);
+            SymBase pid = state.getSymbolByName(symbolName);
+            if (pid == null) {
+                pid = SymGen.makeIntSym(ctx, symbolName);
+                state.addSymbol(pid);
             }
-            return pidExpr;
+            return pid;
         }
         return null;
     }
 
-    public static Expr handleMyPidAPI(InvokeExpr expr, SimState state, Context z3Ctx) {
+    public static SymBase handleMyPidAPI(Context ctx, InvokeExpr expr, SimState state) {
         String symbolName = PID_PREFIX + "MyPID";
-        Expr pidExpr = state.getSymbolByName(symbolName);
-        if (pidExpr == null) {
-            pidExpr = z3Ctx.mkBVConst(symbolName, 32);
-            state.addSymbol(pidExpr);
+        SymBase pid = state.getSymbolByName(symbolName);
+        if (pid == null) {
+            pid = SymGen.makeIntSym(ctx, symbolName);
+            state.addSymbol(pid);
         }
-        return pidExpr;
+        return pid;
 
     }
 
-    public static Expr handleAppOpAPI(InvokeExpr expr, SimState state, Context z3Ctx) {
-        List<Expr> params = state.getLastParam();
+    public static SymBase handleAppOpAPI(Context ctx, InvokeExpr expr, SimState state) {
+        List<SymBase> params = state.getLastParam();
         String methodName = expr.getMethod().getName();
         if (CheckAppOpAPI.getAllMethodNameByClassName("android.app.AppOpsManager").contains(methodName)
                 || methodName.equals("noteOp") || methodName.equals("checkOp")) {
             // get APPOP STR
             String appOPSTR;
-            if (params.get(0) instanceof SeqExpr seqParam){
-                appOPSTR = seqParam.getString();
-            } else if (params.get(0) instanceof BitVecNum bitVecParam){
-                appOPSTR = String.valueOf(bitVecParam.getLong());
+            SymBase appOP = params.get(0);
+            if (appOP instanceof SymString symString) {
+                appOPSTR = symString.getStringExpr().getString();
+            } else if (appOP instanceof SymPrim symPrim) {
+                appOPSTR = String.valueOf(symPrim.getExpr());
+            } else if (appOP.isBitVecNum()){
+                BitVecNum bitVecNum = (BitVecNum) appOP.getExpr();
+                appOPSTR = String.valueOf(bitVecNum.getLong());
             } else {
                 Log.error("Unsupported APPOP type: " + params.get(0).getClass());
                 return null;
@@ -83,75 +92,76 @@ public class HookSymbol {
             String symbolName = APPOP_PREFIX + appOPSTR;
 
             // create or get Expr
-            Expr AppOpExpr = state.getSymbolByName(symbolName);
-            if (AppOpExpr == null) {
-                AppOpExpr = z3Ctx.mkBVConst(symbolName, 32);
-                state.addSymbol(AppOpExpr);
+            SymBase AppOpSym = state.getSymbolByName(symbolName);
+            if (AppOpSym == null) {
+                AppOpSym = SymGen.makeIntSym(ctx, symbolName);
+                state.addSymbol(AppOpSym);
             }
 
             // add Constraint for possible results
             List<Expr> possbileValueConstraints = new ArrayList<>();
             for (int i : CheckAppOpAPI.POSSIBLE_APPOP_CHECK_RESULTS) {
-                possbileValueConstraints.add(z3Ctx.mkEq(AppOpExpr, z3Ctx.mkBV(i, 32)));
+                possbileValueConstraints.add(ctx.mkEq(AppOpSym.getExpr(), ctx.mkBV(i, 32)));
             }
-            state.addConstraint(z3Ctx.mkEq(z3Ctx.mkOr(possbileValueConstraints.toArray(new Expr[0])), z3Ctx.mkTrue()));
-            return AppOpExpr;
+            state.addConstraint(ctx.mkEq(ctx.mkOr(possbileValueConstraints.toArray(new Expr[0])), ctx.mkTrue()));
+            return AppOpSym;
         }
         return null;
     }
 
-    public static Expr handlePermissionAPI(InvokeExpr expr, SimState state, Context z3Ctx) {
-        List<Expr> params = state.getLastParam();
+    public static SymBase handlePermissionAPI(Context ctx, InvokeExpr expr, SimState state) {
+        List<SymBase> params = state.getLastParam();
+        String className = expr.getMethod().getDeclaringClass().getName();
         String methodName = expr.getMethod().getName();
 
         //enforcePermission
-        if (methodName.startsWith("enforce")) {
+        if (EnforcePermissionAPI.isEnforcePermissionAPI(className, methodName)) {
+            SymBase param = params.get(0);
             String permissionValue;
-            if (params.get(0) instanceof SeqExpr seqParam) {
-                permissionValue = seqParam.getString();
+            if (param instanceof SymString symString) {
+                permissionValue = symString.getStringExpr().getString();
             } else {
-                Log.error("Unsupported permission type: " + params.get(0).getClass());
-                return null;
+                permissionValue = "UNFOUND";
             }
 
             // create or get Expr
             String permissionSymbolName = PERMISSION_PREFIX + permissionValue;
-            Expr permissionExpr = state.getSymbolByName(permissionSymbolName);
-            if (permissionExpr == null) {
-                permissionExpr = z3Ctx.mkBVConst(permissionSymbolName, 32);
-                state.addSymbol(permissionExpr);
+            SymBase permissionSym = state.getSymbolByName(permissionSymbolName);
+            if (permissionSym == null) {
+                permissionSym = SymGen.makeIntSym(ctx, permissionSymbolName);
+                state.addSymbol(permissionSym);
             }
-            Expr enforceExpr = z3Ctx.mkEq(permissionExpr, z3Ctx.mkBV(PERMISSION_GRANTED, 32));
+            Expr enforceExpr = ctx.mkEq(permissionSym.getExpr(), ctx.mkBV(PERMISSION_GRANTED, 32));
             state.addConstraint(enforceExpr);
-            return enforceExpr;
+            return permissionSym;
 
 
         // checkPermission
-        } else if (methodName.startsWith("check")) {
+        } else if (CheckPermissionAPI.isCheckPermissionAPI(className, methodName)) {
             String permissionValue;
-            if (params.get(0) instanceof SeqExpr seqParam) {
-                permissionValue = seqParam.getString();
+            SymBase param = params.get(0);
+            if (param instanceof SymString symString) {
+                permissionValue = symString.getStringExpr().getString();
             } else {
-                Log.error("Unsupported permission type: " + params.get(0).getClass());
-                return null;
+                permissionValue = "UNFOUND";
             }
 
 
             // create or get Expr
             String permissionSymbolName = PERMISSION_PREFIX + permissionValue;
-            Expr permissionExpr = state.getSymbolByName(permissionSymbolName);
-            if (permissionExpr == null) {
-                permissionExpr = z3Ctx.mkBVConst(permissionSymbolName, 32);
-                state.addSymbol(permissionExpr);
+            SymBase permissionSym = state.getSymbolByName(permissionSymbolName);
+            if (permissionSym == null) {
+                permissionSym = SymGen.makeIntSym(ctx, permissionSymbolName);
+                state.addSymbol(permissionSym);
             }
 
             // add Constraint for possible results
             List<Expr> possbileValueConstraints = new ArrayList<>();
-            for (int i : CheckPermissionAPI.POSSIBLE_PERMISSIONS_CHECK_RESULTS) {
-                possbileValueConstraints.add(z3Ctx.mkEq(permissionExpr, z3Ctx.mkBV(i, 32)));
+            for (int i : EnforcePermissionAPI.POSSIBLE_PERMISSIONS_CHECK_RESULTS) {
+                possbileValueConstraints.add(ctx.mkEq(permissionSym.getExpr(), ctx.mkBV(i, 32)));
             }
-            state.addConstraint(z3Ctx.mkEq(z3Ctx.mkOr(possbileValueConstraints.toArray(new Expr[0])), z3Ctx.mkTrue()));
-            return permissionExpr;
+            state.addConstraint(ctx.mkEq(ctx.mkOr(possbileValueConstraints.toArray(new Expr[0])), ctx.mkTrue()));
+            return permissionSym;
         }
         return null;
     }

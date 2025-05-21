@@ -1,5 +1,5 @@
 package ccc;
-import static accessControl.CheckPermissionAPI.PERMISSION_GRANTED;
+import static accessControl.EnforcePermissionAPI.PERMISSION_GRANTED;
 
 class testCheckAPI {
      public static final int PERMISSION_GRANTED = 0;

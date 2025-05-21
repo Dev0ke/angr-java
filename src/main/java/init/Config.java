@@ -10,8 +10,8 @@ public class Config {
     public static boolean enableLazySolve = false;
     public static boolean enableInterAnalysis = true;
     public static boolean enableParamSymbolize = false;
-    public static int LoopLimit = 4;
-    public static int branchLimit = 12;
+    public static int LoopLimit = 1;
+    public static int branchLimit = 256;
     public static int depthLimit = 1000;
     public static int timeout = 60*60;
 

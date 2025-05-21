@@ -2,31 +2,26 @@ package Engine;
 
 import com.microsoft.z3.Expr;
 import soot.jimple.*;
-import soot.jimple.internal.JIfStmt;
-import soot.jimple.internal.JLookupSwitchStmt;
-import soot.jimple.internal.JTableSwitchStmt;
-
 import java.util.*;
 import soot.*;
 import soot.toolkits.graph.ExceptionalUnitGraph;
 import utils.Log;
-import Engine.SymBase;
 
 public class SimState {
-        public List<SymBase> symbol;
-        public Map<Value, SymBase> curLocalMap;
-        public Map<Value, SymBase> objectMap;
+        public List<Expr> symbol;
+        public Map<Value, Expr> curLocalMap;
+        public Map<Value, Expr> objectMap;
         public ExceptionalUnitGraph curCFG;
         public List<Expr> constraints;
         public int callDepth;
-        public Map<Unit, List<Integer>> instCount;
-        public Map<String, SymBase> staticFieldMap;
+        public Map<String, Integer> instCount;
+        public Map<String, Expr> staticFieldMap;
         public HashSet<SootMethod> visitedMethods;
 
         // stack
-        public List<List<SymBase>> paramList;
+        public List<List<Expr>> paramList;
         public Stack<Unit> callStack;
-        public Stack<Map<Value, SymBase>> saveLocalMaps;
+        public Stack<Map<Value, Expr>> saveLocalMaps;
         public Stack<ExceptionalUnitGraph> cfgStack;
 
         public SimState() {
@@ -46,59 +41,33 @@ public class SimState {
         }
 
 
-        public void addObject(Value v, SymBase e) {
+        public void addObject(Value v, Expr e) {
             this.objectMap.put(v, e);
         }
 
-        public SymBase getObject(Value v) {
+        public Expr getObject(Value v) {
             return this.objectMap.get(v);
         }
 
-        public void removeObject(SymBase v) {
+        public void removeObject(Value v) {
             this.objectMap.remove(v);
         }
         
         
+
         // TODO FIX HASH COLLISION
-        public int addInstCount(Unit u, int branchIdx) {
-            // String unitKey = u.toString();
-            List<Integer> branchCountList =  this.instCount.get(u);
+        public int addInstCount(Unit u) {
+            String unitKey = u.toString();
             int count;
-            if (branchCountList == null){
-                branchCountList = createBranchCount(u);
-                this.instCount.put(u, branchCountList);
+            if (this.instCount.containsKey(unitKey)) {
+                count = this.instCount.get(unitKey) + 1;
+                this.instCount.put(unitKey, count);
+            } else {
+                this.instCount.put(unitKey, 1);
+                count = 1;
             }
-            count = branchCountList.get(branchIdx);
-            branchCountList.set(branchIdx, count + 1);
             return count;
         }
-
-        public int getBranchCount(Unit u, int branchIdx){
-            // String unitKey = u.toString();
-            List<Integer> branchCountList =  this.instCount.get(u);
-            if (branchCountList == null){
-                branchCountList = createBranchCount(u);
-                this.instCount.put(u, branchCountList);
-            }
-            return branchCountList.get(branchIdx);
-        }
-
-        public static List<Integer> createBranchCount(Unit unit){
-            List<Integer> branchCountList;
-            int size;
-            if(unit instanceof JIfStmt){
-                size = 2;
-            } else if(unit instanceof JLookupSwitchStmt lookupSwitchStmt){
-                size = lookupSwitchStmt.getLookupValues().size() + 1;
-            } else if(unit instanceof JTableSwitchStmt tableSwitchStmt){
-                size = tableSwitchStmt.getHighIndex() - tableSwitchStmt.getLowIndex() + 1 + 1;
-            }  else{ // TODO fix exception?
-                Log.error("Unsupported unit type: " + unit.getClass());
-                return null;
-            }
-            branchCountList = new ArrayList<>(Collections.nCopies(size, 0));
-            return branchCountList;
-        } 
 
 
         public int getBranchDepth() {
@@ -141,18 +110,18 @@ public class SimState {
             return this.cfgStack.isEmpty();
         }
 
-        public void pushParam(List<SymBase> params) {
+        public void pushParam(List<Expr> params) {
             this.paramList.add(params);
         }
 
-        public List<SymBase> getLastParam() {
+        public List<Expr> getLastParam() {
             return this.paramList.get(this.paramList.size() - 1);
         }
 
-        public SymBase getParam(int index) {
+        public Expr getParam(int index) {
             if (this.paramList.isEmpty())
                 return null;
-            List<SymBase> exprs = this.paramList.get(this.paramList.size() - 1);
+            List<Expr> exprs = this.paramList.get(this.paramList.size() - 1);
             if (index < exprs.size())
                 return exprs.get(index);
             return null;
@@ -189,30 +158,30 @@ public class SimState {
         }
 
 
-        public void addSymbol(SymBase s) {
+        public void addSymbol(Expr s) {
             this.symbol.add(s);
         }
 
-        public SymBase getSymbolByName(String name) {
-            for (SymBase s : this.symbol) {
-                if (s.getName().equals(name)) {
+        public Expr getSymbolByName(String name) {
+            for (Expr s : this.symbol) {
+                if (s.toString().equals(name)) {
                     return s;
                 }
             }
             return null;
         }
 
-        public SymBase getLastSymbol() {
+        public Expr getLastSymbol() {
             return this.symbol.get(this.symbol.size() - 1);
         }
 
-        public void addStaticField(StaticFieldRef s, SymBase e) {
+        public void addStaticField(StaticFieldRef s, Expr e) {
             String className = s.getField().getDeclaringClass().getName();
             String fieldName = s.getField().getName();
             this.staticFieldMap.put(className + "#" + fieldName, e);
         }
 
-        public SymBase getStaticExpr(StaticFieldRef s) {
+        public Expr getStaticExpr(StaticFieldRef s) {
             String className = s.getField().getDeclaringClass().getName();
             String fieldName = s.getField().getName();
             return this.staticFieldMap.get(className + "#" + fieldName);
@@ -226,14 +195,14 @@ public class SimState {
             this.curLocalMap.clear();
         }
 
-        public SymBase getSym(Value l) {
-            SymBase r = this.curLocalMap.get(l);
+        public Expr getExpr(Value l) {
+            Expr r = (Expr) this.curLocalMap.get(l);
             return r;
         }
 
-        public void addSym(Value l, SymBase e) {
+        public void addExpr(Value l, Expr e) {
             if (e == null) {
-                return;
+                throw new IllegalArgumentException("Not valid");
             }
             this.curLocalMap.put(l, e);
         }

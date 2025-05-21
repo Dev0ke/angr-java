@@ -133,6 +133,7 @@ public class CGgen {
 
 
         List<String> modifiableExcludeList = new ArrayList<>(EXCLUDE_API_FOR_ANALYSIS);
+        modifiableExcludeList.addAll(EnforcePermissionAPI.getAllClassName());
         modifiableExcludeList.addAll(CheckPermissionAPI.getAllClassName());
         Options.v().set_exclude(modifiableExcludeList);
         SootClass targetClass = Scene.v().loadClassAndSupport(this.className);

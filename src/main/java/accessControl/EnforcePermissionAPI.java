@@ -5,7 +5,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 
-public class CheckPermissionAPI {
+public class EnforcePermissionAPI {
     public static final HashMap<String, HashSet<String>> apiMap = new HashMap<>();
     public static Set<String> allClassNames;
     public static final int PERMISSION_GRANTED = 0;
@@ -33,34 +33,13 @@ public class CheckPermissionAPI {
     //init
     public static void init() {
         String[][] apiData = {
-                //Activity Manager Permission
-                {"android.app.ActivityManager", "checkComponentPermission"},
-                {"android.app.ActivityManager", "checkUidPermission"},
-
-                //Context Uri Permission
-                {"android.content.Context", "checkCallingUriPermission"},
-                {"android.content.Context", "checkCallingOrSelfUriPermission"},
-                {"android.content.Context", "checkCallingUriPermissions"},
-                {"android.content.Context", "checkUriPermission"},
-                {"android.content.Context", "checkUriPermissions"},
-                {"android.content.Context", "checkContentUriPermissionFull"},
-                {"android.content.Context", "checkCallingOrSelfUriPermissions"},
-
-                //Context Permission
-
-                {"android.content.Context", "checkCallingPermission"},
-                {"android.content.Context", "checkCallingOrSelfPermission"},
-                {"android.content.Context", "checkPermission"},
-                {"android.content.Context", "checkSelfPermission"},
-
-
-                // test
-//                {"testCheckAPI","enforceP1"},
-//                {"testCheckAPI","checkP2"},
-                {"com.android.server.am.ActivityManagerService","checkCallingPermission"},
-                {"com.android.server.am.ActivityManagerService","checkPermission"},
-
-
+                {"android.content.Context", "enforceCallingUriPermission"},
+                {"android.content.Context", "enforceCallingOrSelfUriPermission"},
+                {"android.content.Context", "enforceUriPermission"},
+                {"android.content.Context", "enforceCallingPermission"},
+                {"android.content.Context", "enforceCallingOrSelfPermission"},
+                {"android.content.Context", "enforcePermission"},
+                {"com.android.server.am.ActivityManagerService","enforceCallingPermission"}
         };
         initialize(apiData);
 
@@ -83,12 +62,11 @@ public class CheckPermissionAPI {
         return apiMap.getOrDefault(className, new HashSet<>());
     }
 
-    public static boolean isCheckPermissionAPI(String className, String methodName){
+    public static boolean isEnforcePermissionAPI(String className, String methodName){
         if (apiMap.containsKey(className)){
             return apiMap.get(className).contains(methodName);
         }
         return false;
     }
-
 
 }

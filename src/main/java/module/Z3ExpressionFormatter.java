@@ -19,8 +19,10 @@ public class Z3ExpressionFormatter {
         put("bvmul", "*");
         put("bvudiv", "/");
         put("bvsdiv", "/");
+        put("bvsdiv_i", "/");
         put("bvurem", "%");
         put("bvsrem", "%");
+        put("bvsrem_i", "%");
         put("bvsmod", "%");
         put("bvand", "&");
         put("bvor", "|");
@@ -29,6 +31,7 @@ public class Z3ExpressionFormatter {
         put("bvshl", "<<");
         put("bvlshr", ">>");
         put("bvashr", ">>>");
+        put("lengthof", "length");
     }};
 
     public static String formatExpression(Expr expr) {
@@ -97,6 +100,9 @@ public class Z3ExpressionFormatter {
         String declName = expr.getFuncDecl().getName().toString();
         
         if (OPERATOR_MAP.containsKey(declName)) {
+            if (declName.equals("lengthof")) {
+                return OPERATOR_MAP.get(declName) + "(" + formatExpression(expr.getArgs()[0]) + ")";
+            }
             return formatBinaryOp(expr, OPERATOR_MAP.get(declName));
         }
         
@@ -186,6 +192,7 @@ public class Z3ExpressionFormatter {
         // Define operator precedence
         Map<String, Integer> precedence = new HashMap<String, Integer>() {{
             put("bvnot", 4);
+            put("lengthof", 4);
             put("bvand", 3);
             put("bvor", 2);
             put("bvxor", 2);
@@ -194,8 +201,10 @@ public class Z3ExpressionFormatter {
             put("bvmul", 1);
             put("bvudiv", 1);
             put("bvsdiv", 1);
+            put("bvsdiv_i", 1);
             put("bvurem", 1);
             put("bvsrem", 1);
+            put("bvsrem_i", 1);
             put("bvsmod", 1);
         }};
         

@@ -17,7 +17,7 @@ public class WarperFinder {
     public SootMethod entryMethod;
     public HashSet<SootMethod> CheckMethods;
     public HashSet<SootMethod> visitedMethods;
-    public static HashSet<String> permissionClass = CheckPermissionAPI.getAllClassName();
+    public static HashSet<String> permissionClass = EnforcePermissionAPI.getAllClassName();
 
     public WarperFinder(SootMethod entryMethod) {
         this.entryMethod = entryMethod;
@@ -87,7 +87,7 @@ private void processCallExpr(InvokeExpr invokeExpr, Set<SootMethod> visited,
     
     // 检查是否是访问控制相关的调用
     if (permissionClass.contains(className)) {
-        if (!CheckPermissionAPI.getAllMethodNameByClassName(className).contains(callee.getName())) {
+        if (!EnforcePermissionAPI.getAllMethodNameByClassName(className).contains(callee.getName())) {
             findPaths(callee, visited, currentPath, allPaths);
         }
     } else if (StaticAPIs.shouldAnalyze(className)) {
@@ -118,7 +118,7 @@ private void processCallExpr(InvokeExpr invokeExpr, Set<SootMethod> visited,
                     SootMethod callee = assignStmt.getInvokeExpr().getMethod();
                     String className = callee.getDeclaringClass().getName();
                     if (permissionClass.contains(className)) {
-                        if (CheckPermissionAPI.getAllMethodNameByClassName(className).contains(callee.getName())) {
+                        if (EnforcePermissionAPI.getAllMethodNameByClassName(className).contains(callee.getName())) {
                             CheckMethods.add(method);
                             isAccessControl = true;
                         } else {
@@ -132,7 +132,7 @@ private void processCallExpr(InvokeExpr invokeExpr, Set<SootMethod> visited,
                     SootMethod callee = invokeStmt.getInvokeExpr().getMethod();
                     String className = callee.getDeclaringClass().getName();
                     if (permissionClass.contains(className)) {
-                        if (CheckPermissionAPI.getAllMethodNameByClassName(className).contains(callee.getName())) {
+                        if (EnforcePermissionAPI.getAllMethodNameByClassName(className).contains(callee.getName())) {
                             CheckMethods.add(method);
                             isAccessControl = true;
                         } else {
