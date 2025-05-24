@@ -77,7 +77,7 @@ public class Z3ExpressionFormatter {
             case "or":
                 return formatNaryOp(expr, "OR");
             case "=":
-                return formatBinaryOp(expr, "=");
+                return formatBinaryOp(expr, "==");
             case "distinct":
                 return formatBinaryOp(expr, "!=");
             default:
@@ -103,15 +103,17 @@ public class Z3ExpressionFormatter {
             if (declName.equals("lengthof")) {
                 return OPERATOR_MAP.get(declName) + "(" + formatExpression(expr.getArgs()[0]) + ")";
             }
+            if (declName.equals("bvnot")) {
+                String arg = formatExpression(expr.getArgs()[0]);
+                if (needsParentheses(expr.getArgs()[0], expr)) {
+                    arg = "(" + arg + ")";
+                }
+                return OPERATOR_MAP.get(declName) + arg;
+            }
             return formatBinaryOp(expr, OPERATOR_MAP.get(declName));
         }
         
-        switch (declName) {
-            case "bvnot":
-                return "~" + formatExpression(expr.getArgs()[0]);
-            default:
-                return formatDefaultExpr(expr);
-        }
+        return formatDefaultExpr(expr);
     }
 
     private static String formatIntExpr(IntExpr expr) {

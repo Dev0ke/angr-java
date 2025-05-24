@@ -39,6 +39,7 @@ public class CheckFinder {
 
             Stack<SootMethod> stack = new Stack<SootMethod>();
             Iterator<Unit> iterator = units.iterator();
+
             while (iterator.hasNext()) {
                 Unit unit = iterator.next();
                 if (unit instanceof JAssignStmt assignStmt) {
@@ -83,10 +84,12 @@ public class CheckFinder {
                     continue;
                 }
                 if (StaticAPIs.shouldAnalyze(callee.getDeclaringClass().getName())) {
-                    Log.info(callee.toString());
+                    // Log.info(callee.toString());
                     visitedMethods.add(callee);
                     if(isAccessControlNode(callee)){
-                        CheckMethods.add(method);   
+                        // Log.info(callee.toString());
+                        CheckMethods.add(method);  
+                        CheckMethods.add(callee); 
                         isAccessControl = true;
                     }
                 }

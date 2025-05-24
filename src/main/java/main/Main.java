@@ -5,6 +5,8 @@ import accessControl.EnforcePermissionAPI;
 import accessControl.CheckPidAPI;
 import accessControl.CheckUidAPI;
 import module.APIFinder;
+import module.APIFinder2;
+import module.APIFinder3;
 import module.CheckFinder;
 import module.JimpleConverter;
 import module.PathAnalyze;
@@ -78,18 +80,37 @@ public class Main {
         SootEnv sootEnv = new SootEnv(androidJarPath, allFiles, Options.src_prec_apk);
         sootEnv.initEnv();
 
-        HashMap<String,List<String>> apiList2 = APIFinder.findServiceAPI();
-        HashMap<String,List<String>> apiList1 = APIFinder.findProviderAPI();
-        apiList2.putAll(apiList1);
+        // HashMap<String,List<String>> apiList2 = APIFinder.findServiceAPI();
+        // HashMap<String,List<String>> apiList1 = APIFinder.findProviderAPI();
+        // apiList2.putAll(apiList1);
+
+        APIFinder3 finder = new APIFinder3();
+        HashMap<String,HashSet<String>> apiList2 = finder.collectAllClassApis(false);
+
+
+        APIFinder2 finder2 = new APIFinder2();
+        HashMap<String,HashSet<String>> apiList3 = finder2.collectAllClassApis(true);
+        
+        // merage api
+        for(Map.Entry<String,HashSet<String>> entry1 : apiList3.entrySet()){
+            String className = entry1.getKey();
+            HashSet<String> methodList = entry1.getValue();
+            if(apiList2.containsKey(className)){
+                apiList2.get(className).addAll(methodList);
+            }else{
+                apiList2.put(className, methodList);
+            }
+        }
+
         // System.exit(0);
 
         // 5. 使用批处理方式处理任务
         ResultExporter resultExporter = new ResultExporter(Config.resultPath);
         List<Future<?>> futures = new ArrayList<>();
 
-        for (Map.Entry<String, List<String>> entry : apiList2.entrySet()) {
+        for (Map.Entry<String, HashSet<String>> entry : apiList2.entrySet()) {
             String className = entry.getKey();
-            List<String> methodList = entry.getValue();
+            HashSet<String> methodList = entry.getValue();
 
             // 6. 批量提交任务
             for (String methodSign : methodList) {
@@ -228,16 +249,17 @@ public class Main {
     private static void processMethod(SootMethod m, String className, String methodSignature,
             ResultExporter resultExporter, AtomicInteger success) throws TimeoutException {
         long paStartTime = System.currentTimeMillis();
-        CheckFinder cf = new CheckFinder(m);
-        HashSet<SootMethod> CheckNodes = cf.runFind();
-        PathAnalyze pa = new PathAnalyze(m,CheckNodes);
-        pa.startAnalyze();
-        Set<List<String>> result = pa.getAnalyzeResult();
+        // CheckFinder cf = new CheckFinder(m);
+        // HashSet<SootMethod> CheckNodes = cf.runFind();
+        // PathAnalyze pa = new PathAnalyze(m,CheckNodes);
+        // pa.startAnalyze();
+        // Set<List<String>> result = pa.getAnalyzeResult();
+        Set<List<String>> result = new HashSet<>();
         long paEndTime = System.currentTimeMillis();
         resultExporter.writeResult(ResultExporter.CODE_SUCCESS, className, methodSignature, result,
                 paEndTime - paStartTime, "");
         success.incrementAndGet();
-        pa.close();
+        // pa.close();
     }
 
 
@@ -297,14 +319,16 @@ public class Main {
         SootMethod m2 = sootEnv.getMethodBySignature(className, signature);
         CheckFinder cf = new CheckFinder(m2);
         HashSet<SootMethod> result = cf.runFind();
-        // for (SootMethod m : result) {
-        //     Log.info("[-] " + m);
-        // }
+        Log.info("------------------------------------CheckFind-----------------------------------------------");
+        for (SootMethod m : result) {
+            Log.info("[-] " + m);
+        }
+        Log.info("--------------------------------------------------------------------------------------------");
         PathAnalyze pa = new PathAnalyze(m2,result);
         pa.startAnalyze();
         Set<List<String>> paresult = pa.getAnalyzeResult();
         for (List<String> path : paresult) {
-            Log.info("-" + path);
+            Log.info(" - " + path);
         }
     
     }
@@ -396,6 +420,67 @@ public class Main {
 
     }
 
+    public static void test_find3(int APIversion,String inputPath){
+        String androidJarPath = JimpleConverter.getAndroidJarpath(APIversion);
+        List<String> allFiles = FirmwareUtils.findAllFiles(inputPath);
+        FirmwareUtils.removeErrorFile(allFiles);
+        SootEnv sootEnv = new SootEnv(androidJarPath, allFiles, Options.src_prec_apk);
+        sootEnv.initEnv();
+
+        APIFinder3 finder = new APIFinder3();
+        HashMap<String,HashSet<String>> apiList1 = finder.collectAllClassApis(false);
+
+        //Log all api
+        int classCount = 0;
+        int methodCount = 0;
+        for (Map.Entry<String, HashSet<String>> entry : apiList1.entrySet()) {
+            String className = entry.getKey();
+            HashSet<String> methodList = entry.getValue();
+            Log.info("------------------------------------ " + className + " -----------------------------------------------");
+            classCount++;
+            methodCount += methodList.size();
+            for (String methodName : methodList) {
+                Log.info("--" + methodName);
+            }
+        }
+        Log.info("------------------------------------ Total -----------------------------------------------");
+        Log.info("Class count: " + classCount);
+        Log.info("Method count: " + methodCount);
+    }
+
+
+    public static void test_find(int APIversion,String inputPath){
+        String androidJarPath = JimpleConverter.getAndroidJarpath(APIversion);
+        List<String> allFiles = FirmwareUtils.findAllFiles(inputPath);
+        FirmwareUtils.removeErrorFile(allFiles);
+        
+
+        SootEnv sootEnv = new SootEnv(androidJarPath, allFiles, Options.src_prec_apk);
+        sootEnv.initEnv();
+
+        APIFinder2 finder = new APIFinder2();
+        HashMap<String,HashSet<String>> apiList1 = finder.collectAllClassApis(false);
+
+        //Log all api
+        int classCount = 0;
+        int methodCount = 0;
+        for (Map.Entry<String, HashSet<String>> entry : apiList1.entrySet()) {
+            String className = entry.getKey();
+            HashSet<String> methodList = entry.getValue();
+            Log.info("------------------------------------ " + className + " -----------------------------------------------");
+            classCount++;
+            methodCount += methodList.size();
+            for (String methodName : methodList) {
+                    Log.info("--" + methodName);
+              
+            }
+        }
+
+        Log.info("------------------------------------ Total -----------------------------------------------");
+        Log.info("Class count: " + classCount);
+        Log.info("Method count: " + methodCount);
+    }
+
     public static HashMap<String, List<String>> readAPIfromFile(String path) {
         File file = new File(path);
         HashMap<String, List<String>> apiMap = new HashMap<>();
@@ -430,15 +515,16 @@ public class Main {
     public static String defaultinputPath = inputPath_7;
 
     public static void main(String[] args) {
+        Config.logLevel = "INFO";
+        // Config.logLevel = "OFF";
         init();
         // test_oppo();
         // test_arc_api(Config.AOSP_601_ARCADE, 23, inputPath_6);
         // test_arc_api(Config.AOSP_7_ARCADE, 24, inputPath_7);
-        // test_full_api(24, inputPath_7);
+        test_full_api(24, inputPath_7);
         // test_full_api(23, inputPath_6); 
-        // testByMethodName("android.provider.Settings", "checkAndNoteChangeNetworkStateOperation");
-        testOneBySign("com.android.server.TelephonyRegistry","void notifyVoLteServiceStateChanged(android.telephony.VoLteServiceState)");
-        // testOneBySign("com.android.server.sip.SipService","android.net.sip.ISipSession getPendingSession(java.lang.String,java.lang.String)");
+        // test_find3(24, inputPath_7);
+        // testOneBySign("com.android.server.audio.AudioService","void reloadAudioSettings()");
     }
 
 }

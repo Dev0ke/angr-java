@@ -12,6 +12,7 @@ import soot.jimple.internal.*;
 import com.microsoft.z3.Context;
 import com.microsoft.z3.Expr;
 
+import module.SymbolSolver;
 import utils.Log;
 /**
  * Symbolic representation of a Java List using Z3 arrays

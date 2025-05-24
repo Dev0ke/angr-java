@@ -17,7 +17,9 @@ public class SimState {
         public Map<Value, SymBase> curLocalMap;
         public Map<Value, SymBase> objectMap;
         public ExceptionalUnitGraph curCFG;
-        public List<Expr> constraints;
+        public List<Expr> globalConstraints;
+        public List<Expr> localConstraints;
+
         public int callDepth;
         public Map<Unit, List<Integer>> instCount;
         public Map<String, SymBase> staticFieldMap;
@@ -25,24 +27,34 @@ public class SimState {
 
         // stack
         public List<List<SymBase>> paramList;
+
         public Stack<Unit> callStack;
-        public Stack<Map<Value, SymBase>> saveLocalMaps;
+        public Stack<Map<Value, SymBase>> LocalMapsStack;
+        public Stack<List<Expr>> localConstraintsStack;
         public Stack<ExceptionalUnitGraph> cfgStack;
 
         public SimState() {
             this.curLocalMap = new HashMap<>();
-            this.constraints = new ArrayList<Expr>();
+            this.globalConstraints = new ArrayList<Expr>();
+            this.localConstraints = new ArrayList<Expr>();
             this.symbol = new ArrayList<>();
-            this.callStack = new Stack<>();
-            this.cfgStack = new Stack<>();
+
+
             this.paramList = new ArrayList<>();
             this.instCount = new HashMap<>();
             this.staticFieldMap = new HashMap<>();
-            this.saveLocalMaps = new Stack<>();
+
             this.visitedMethods = new HashSet<>();
             this.objectMap = new HashMap<>();
             this.curCFG = null;
             this.callDepth = 0;
+
+
+            // stack
+            this.LocalMapsStack = new Stack<>();
+            this.localConstraintsStack = new Stack<>();
+            this.callStack = new Stack<>();
+            this.cfgStack = new Stack<>();
         }
 
 
@@ -169,25 +181,57 @@ public class SimState {
         }
 
         public void pushLocalMap() {
-            this.saveLocalMaps.push(this.curLocalMap);
+            this.LocalMapsStack.push(this.curLocalMap);
             this.curLocalMap = new HashMap<>();
         }
 
         public void popLocalMap() {
-            this.curLocalMap = this.saveLocalMaps.pop();
+            this.curLocalMap = this.LocalMapsStack.pop();
             if (this.curLocalMap == null) {
                 this.curLocalMap = new HashMap<>();
                 Log.error("[-] LocalMap is null");
             }
         }
 
-        public void addConstraint(Expr c) {
-            this.constraints.add(c);
-        }
-        public Expr popConstraint() {
-            return this.constraints.remove(this.constraints.size() - 1);
+        public void pushLocalConstraints() {
+            this.localConstraintsStack.push(this.localConstraints);
+            this.localConstraints = new ArrayList<Expr>();
         }
 
+        public void popLocalConstraints() {
+            this.localConstraints = this.localConstraintsStack.pop();
+        }
+
+        public void addGlobalConstraint(Expr c) {
+            this.globalConstraints.add(c);
+        }
+        public Expr popGlobalConstraint() {
+            return this.globalConstraints.remove(this.globalConstraints.size() - 1);
+        }
+        
+
+        public void addLocalConstraint(Expr c) {
+            this.localConstraints.add(c);
+        }
+
+        public Expr popLocalConstraint() {
+            return this.localConstraints.remove(this.localConstraints.size() - 1);
+        }
+
+        public List<Expr> getLocalConstraints() {
+            return this.localConstraints;
+        }
+
+        public List<Expr> getGlobalConstraints() {
+            return this.globalConstraints;
+        }
+
+        public List<Expr> getFullConstraints() {
+            List<Expr> constraints = new ArrayList<>();
+            constraints.addAll(this.localConstraints);
+            constraints.addAll(this.globalConstraints);
+            return constraints;
+        }
 
         public void addSymbol(SymBase s) {
             this.symbol.add(s);
@@ -226,12 +270,12 @@ public class SimState {
             this.curLocalMap.clear();
         }
 
-        public SymBase getSym(Value l) {
+        public SymBase getLocalSym(Value l) {
             SymBase r = this.curLocalMap.get(l);
             return r;
         }
 
-        public void addSym(Value l, SymBase e) {
+        public void addLocalSym(Value l, SymBase e) {
             if (e == null) {
                 return;
             }
@@ -240,22 +284,83 @@ public class SimState {
 
         // TODO 处理深拷贝
         public void copyTo(SimState dest) {
+            // 保持CFG的浅拷贝（通常是共享的）
             dest.curCFG = this.curCFG;    
-            dest.curLocalMap.putAll(this.curLocalMap);
-            dest.objectMap.putAll(this.objectMap);
-            dest.constraints.addAll(this.constraints);
+            
+            // 深拷贝curLocalMap
+            dest.curLocalMap.clear();
+            for (Map.Entry<Value, SymBase> entry : this.curLocalMap.entrySet()) {
+                dest.curLocalMap.put(entry.getKey(), entry.getValue());
+            }
+            
+            // 深拷贝objectMap
+            dest.objectMap.clear();
+            for (Map.Entry<Value, SymBase> entry : this.objectMap.entrySet()) {
+                dest.objectMap.put(entry.getKey(), entry.getValue());
+            }
+            
+            // 深拷贝globalConstraints
+            dest.globalConstraints.clear();
+            dest.globalConstraints.addAll(this.globalConstraints);
+            
+            // 深拷贝localConstraints
+            dest.localConstraints.clear();
+            dest.localConstraints.addAll(this.localConstraints);
+            
+            // 深拷贝symbol
+            dest.symbol.clear();
             dest.symbol.addAll(this.symbol);
 
-            dest.instCount.putAll(this.instCount);
-            dest.staticFieldMap.putAll(this.staticFieldMap);
+            // 深拷贝instCount - Map<Unit, List<Integer>>
+            dest.instCount.clear();
+            for (Map.Entry<Unit, List<Integer>> entry : this.instCount.entrySet()) {
+                List<Integer> copyList = new ArrayList<>(entry.getValue());
+                dest.instCount.put(entry.getKey(), copyList);
+            }
+            
+            // 深拷贝staticFieldMap
+            dest.staticFieldMap.clear();
+            for (Map.Entry<String, SymBase> entry : this.staticFieldMap.entrySet()) {
+                dest.staticFieldMap.put(entry.getKey(), entry.getValue());
+            }
 
-            // stack
+            // 深拷贝callStack
+            dest.callStack.clear();
             dest.callStack.addAll(this.callStack);
-            dest.paramList.addAll(this.paramList);
-            dest.saveLocalMaps.addAll(this.saveLocalMaps);
+            
+            // 深拷贝LocalMapsStack - Stack<Map<Value, SymBase>>
+            dest.LocalMapsStack.clear();
+            for (Map<Value, SymBase> map : this.LocalMapsStack) {
+                Map<Value, SymBase> copyMap = new HashMap<>();
+                for (Map.Entry<Value, SymBase> entry : map.entrySet()) {
+                    copyMap.put(entry.getKey(), entry.getValue());
+                }
+                dest.LocalMapsStack.add(copyMap);
+            }
+            
+            // 深拷贝localConstraintsStack - Stack<List<Expr>>
+            dest.localConstraintsStack.clear();
+            for (List<Expr> list : this.localConstraintsStack) {
+                List<Expr> copyList = new ArrayList<>(list);
+                dest.localConstraintsStack.add(copyList);
+            }
+            
+            // 深拷贝cfgStack
+            dest.cfgStack.clear();
             dest.cfgStack.addAll(this.cfgStack);
 
+            // 深拷贝paramList - List<List<SymBase>>
+            dest.paramList.clear();
+            for (List<SymBase> list : this.paramList) {
+                List<SymBase> copyList = new ArrayList<>(list);
+                dest.paramList.add(copyList);
+            }
+            
+            // 深拷贝visitedMethods
+            dest.visitedMethods.clear();
             dest.visitedMethods.addAll(this.visitedMethods);
+            
+            // callDepth是基本类型，直接赋值
             dest.callDepth = this.callDepth;
         }
 
@@ -267,14 +372,15 @@ public class SimState {
 
         public void clear() {
             this.curLocalMap.clear();
-            this.constraints.clear();
+            this.globalConstraints.clear();
+            this.localConstraints.clear();
             this.symbol.clear();
             this.callStack.clear();
             this.cfgStack.clear();
             this.paramList.clear();
             this.instCount.clear();
             this.staticFieldMap.clear();
-            this.saveLocalMaps.clear();
+            this.LocalMapsStack.clear();
             this.visitedMethods.clear();
             this.objectMap.clear();
         }

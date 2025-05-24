@@ -12,8 +12,7 @@ import Engine.SymList;
 import Engine.SymBase;
 import Engine.SymGen;
 import Engine.SymString;
-import Engine.SymbolSolver;
-
+// import Engine.SymbolSolver;
 
 import soot.*;
 import soot.jimple.*;
@@ -50,12 +49,12 @@ public class PathAnalyze {
     }
 
     public void makeParamsSymbol(SootMethod m, SimState state) {
-        // Log.info(m.toString());
         List<Type> paramTypes = m.getParameterTypes();
         List<SymBase> entryParams = new ArrayList<>();
         for(int i = 0; i < paramTypes.size(); i++){
             Type paramType = paramTypes.get(i);
-            SymBase paramExpr = SymGen.makeSymbol(this.z3Ctx,paramType,"<PARAM>x" + i);
+            String name = String.format("<PARAM>%s_x%d",paramType.toString(),i);
+            SymBase paramExpr = SymGen.makeSymbol(this.z3Ctx,paramType,name);
             entryParams.add(paramExpr);
         }
         state.pushParam(entryParams);
@@ -67,12 +66,12 @@ public class PathAnalyze {
         if(operand instanceof Constant constant)
             v = SymGen.makeConstantExpr(this.z3Ctx,constant);
         else if(operand instanceof JimpleLocal)
-            v = state.getSym(operand);
+            v = state.getLocalSym(operand);
         else if(operand instanceof StaticFieldRef staticRef)
             v = state.getStaticExpr(staticRef);
         else if(operand instanceof JArrayRef arrayRef){
             Value base = arrayRef.getBase();
-            v = state.getSym(base);
+            v = state.getLocalSym(base);
         } else{
             Log.error("Unsupported value type: " + operand.getClass());
         }
@@ -81,7 +80,7 @@ public class PathAnalyze {
 
     public void updateValue(Value v, SymBase e, SimState state){
         if(v instanceof JimpleLocal)
-            state.addSym(v, e);
+            state.addLocalSym(v, e);
         else if(v instanceof StaticFieldRef staticRef)
             state.addStaticField(staticRef, e);
         else
@@ -132,6 +131,10 @@ public class PathAnalyze {
         return;
     }
 
+
+    /*   ------------------------------------------------   */
+    /*                    Exception Handler                 */
+    /*   ------------------------------------------------   */
 
     public Unit getExceptionHandler(Unit curUnit, SimState state, RefType exceptionType) {
         Log.warn("Get Exception Handler for exception type: " + exceptionType);
@@ -242,14 +245,15 @@ public class PathAnalyze {
         return null;
     }
 
-
+     /*   ------------------------------------------------   */
+     /*                     Main Loop                        */
+     /*   ------------------------------------------------   */
     
     public void doOne(Unit curUnit, SimState state, Boolean isFromReturn) {
 
         /*   ------------------------------------------------   */
         /*                    From Return                       */
         /*   ------------------------------------------------   */
-
 
         ExceptionalUnitGraph cfg = state.getCurCFG();
         // handle return
@@ -274,17 +278,22 @@ public class PathAnalyze {
                 SymBase result = handleCalculate(condition, state);
                 
                 // copy current state
-                SimState branchState = state.copy();
+                SimState state_true = state.copy();
+                SimState state_false = state;
                 Unit branch_true = ifStmt.getTarget();
                 Unit branch_false = cfg.getUnexceptionalSuccsOf(curUnit).get(0);
+
                 if (result != null) {
                     Expr resultExpr = result.getExpr();
-                    if(branchState.getBranchDepth() > Config.branchLimit  && !AccessControlUtils.isAccessControlSym(result)){
-                        Log.info("Branch Limit: " + branchState.getBranchDepth());
+                    boolean isAccessControl = AccessControlUtils.isAccessControlSym(result);
+
+                    // TODO 感觉需要修复一下
+                    if(state_true.getBranchDepth() > Config.branchLimit  && !isAccessControl){
+                        Log.info("Branch Limit: " + state_true.getBranchDepth());
 
                         int choice = 0;
-                        int branchCount0 = branchState.getBranchCount(curUnit,0);
-                        int branchCount1 = branchState.getBranchCount(curUnit,1);
+                        int branchCount0 = state_true.getBranchCount(curUnit,0);
+                        int branchCount1 = state_true.getBranchCount(curUnit,1);
                         if(branchCount0 > branchCount1){
                             choice = 1;
                         } else if(branchCount0 < branchCount1){
@@ -296,25 +305,37 @@ public class PathAnalyze {
 
                         // TRUE state
                         if(choice == 0){ 
-                            branchState.addConstraint(resultExpr);
-                            branchState.addInstCount(curUnit,0);
-                            doOne(branch_true, branchState, false);
+                            if(isAccessControl){
+                                state_true.addGlobalConstraint(resultExpr);
+                            } else{
+                                state_true.addLocalConstraint(resultExpr);
+                            }
+                            state_true.addInstCount(curUnit,0);
+                            doOne(branch_true, state_true, false);
                         }
-                        
+
                         // FALSE state
                         else{ 
-                            state.addConstraint(this.z3Ctx.mkNot(resultExpr));
-                            state.addInstCount(curUnit,1);
-                            doOne(branch_false, state, false);      
+                            if(isAccessControl){
+                                state_false.addGlobalConstraint(this.z3Ctx.mkNot(resultExpr));
+                            } else{
+                                state_false.addLocalConstraint(this.z3Ctx.mkNot(resultExpr));
+                            }
+                            state_false.addInstCount(curUnit,1);
+                            doOne(branch_false, state_false, false);      
                         }
                         return;
                     }
 
                     Log.info("|- IfStmt 1, condition [TRUE]: " + condition);
-                    branchState.addConstraint(resultExpr);
-                    if ((branchState.addInstCount(curUnit,0) <= Config.LoopLimit ||  AccessControlUtils.isAccessControlSym(result) ) ){
-                        if(enableLazySolve || SymbolSolver.solveConstraintsSingle(this.z3Ctx,branchState.constraints))
-                            doOne(branch_true, branchState, false);
+                    if(isAccessControl){
+                        state_true.addGlobalConstraint(resultExpr);
+                    } else{
+                        state_true.addLocalConstraint(resultExpr);
+                    }
+                    if ((state_true.addInstCount(curUnit,0) <= Config.LoopLimit ||  isAccessControl ) ){
+                        if(enableLazySolve || SymbolSolver.solveConstraintsSingle(this.z3Ctx,state_true.getFullConstraints()))
+                            doOne(branch_true, state_true, false);
                         else
                             Log.info("unsat branch");
                     } else {
@@ -323,10 +344,14 @@ public class PathAnalyze {
 
              
                     Log.info("|- IfStmt 2, condition [FALSE]: not " + condition);
-                    state.addConstraint(this.z3Ctx.mkNot(resultExpr));
-                    if ((state.addInstCount(curUnit,1) <= Config.LoopLimit ||  AccessControlUtils.isAccessControlSym(result) ) ) {
-                        if(enableLazySolve || SymbolSolver.solveConstraintsSingle(this.z3Ctx,state.constraints))
-                            doOne(branch_false, state,  false);
+                    if(isAccessControl){
+                        state_false.addGlobalConstraint(this.z3Ctx.mkNot(resultExpr));
+                    } else{
+                        state_false.addLocalConstraint(this.z3Ctx.mkNot(resultExpr));
+                    }
+                    if ((state_false.addInstCount(curUnit,1) <= Config.LoopLimit ||  isAccessControl ) ) {
+                        if(enableLazySolve || SymbolSolver.solveConstraintsSingle(this.z3Ctx,state_false.getFullConstraints()))
+                            doOne(branch_false, state_false,  false);
                         else
                             Log.info("unsat branch");
                     } else {
@@ -335,12 +360,12 @@ public class PathAnalyze {
                     return;
 
                 } else {
-                    if(branchState.getBranchDepth() > Config.branchLimit && !AccessControlUtils.isAccessControlSym(result)){
-                        Log.info("Branch Limit: " + branchState.getBranchDepth());
+                    if(state_true.getBranchDepth() > Config.branchLimit && !AccessControlUtils.isAccessControlSym(result)){
+                        Log.info("Branch Limit: " + state_true.getBranchDepth());
 
                         int choice = 0;
-                        int branchCount0 = branchState.getBranchCount(curUnit,0);
-                        int branchCount1 = branchState.getBranchCount(curUnit,1);
+                        int branchCount0 = state_true.getBranchCount(curUnit,0);
+                        int branchCount1 = state_true.getBranchCount(curUnit,1);
                         if(branchCount0 > branchCount1){
                             choice = 1;
                         } else if(branchCount0 < branchCount1){
@@ -353,25 +378,25 @@ public class PathAnalyze {
                         // choose branch
                         if(choice == 0){
                             // branchState.addConstraint(resultExpr);
-                            branchState.addInstCount(curUnit,0);
-                            doOne(branch_true, branchState, false);
+                            state_true.addInstCount(curUnit,0);
+                            doOne(branch_true, state_true, false);
                         } else{
                             // state.addConstraint(this.z3Ctx.mkNot(resultExpr));
-                            state.addInstCount(curUnit,1);
-                            doOne(branch_false, state, false);      
+                            state_false.addInstCount(curUnit,1);
+                            doOne(branch_false, state_false, false);      
                         }
                         return;
                     }
 
-                    if (branchState.addInstCount(curUnit,0) <= Config.LoopLimit) {
+                    if (state_true.addInstCount(curUnit,0) <= Config.LoopLimit) {
                         // TODO Add constraint 
                         Log.info("|- IfStmt 1, condition TRUE: " + condition);
-                        doOne(branch_true, branchState,  false);
+                        doOne(branch_true, state_true,  false);
                     }
-                    if (state.addInstCount(curUnit,1) <= Config.LoopLimit) {
+                    if (state_false.addInstCount(curUnit,1) <= Config.LoopLimit) {
                         // TODO Add constraint 
                         Log.info("|- IfStmt 2, condition FALSE: !" + condition);
-                        doOne(branch_false, state, false);
+                        doOne(branch_false, state_false, false);
                     }
                     return;
 
@@ -388,7 +413,7 @@ public class PathAnalyze {
                 Value right = assignStmt.getRightOp();
                 SymBase v = null;
                 if (right instanceof JimpleLocal) {
-                    v = state.getSym(right);
+                    v = state.getLocalSym(right);
                 } else if (right instanceof Constant constant) {
                     v = SymGen.makeConstantExpr(this.z3Ctx, constant);
                 } else if (right instanceof StaticFieldRef staticRef) {
@@ -403,6 +428,10 @@ public class PathAnalyze {
                     Type type = newExpr.getBaseType();
                     if (type.toString().equals("java.lang.SecurityException")) {
                         Log.info("SecurityException branch. Terminate.");
+                        Unit handler = getExceptionHandler(curUnit, state, (RefType)type);
+                        if(handler != null){
+                            doOne(handler, state, false);
+                        }
                         return;
                     } else {
                         Log.error("Unsupported right type: " + right.getClass());
@@ -418,7 +447,7 @@ public class PathAnalyze {
                             int indexValue = constant.value;
                             v = symList.get(indexValue);
                         } else if(index instanceof JimpleLocal local){
-                            SymBase indexSym = state.getSym(local);
+                            SymBase indexSym = state.getLocalSym(local);
                             v = symList.get(this.z3Ctx, indexSym,state);
                         } else{
                             Log.error("Unsupported index type: " + index.getClass());
@@ -446,6 +475,10 @@ public class PathAnalyze {
                 } else {
                     Log.error("Unsupported right type: " + right.getClass());
                 }
+
+
+
+
                 // TODO ADD FIELD ref
                 if (left instanceof JInstanceFieldRef) {
                     // TODO
@@ -472,7 +505,11 @@ public class PathAnalyze {
                         state.addStaticField(staticRef, v);
                 } else if (left instanceof JimpleLocal l) {
                     if (v != null)
-                        state.addSym(l, v);
+                        state.addLocalSym(l, v);
+                    else{
+                        v = SymGen.makeSymbol(this.z3Ctx,left.getType(),left.toString());
+                        state.addLocalSym(l, v);
+                    }
                 } else if (left instanceof JArrayRef arrayRef) {
                     SymList symList = (SymList) valueToSym(arrayRef, state);
 
@@ -518,7 +555,7 @@ public class PathAnalyze {
 
             else if (curUnit instanceof JLookupSwitchStmt switchStmt) {
                 Value key = switchStmt.getKey();
-                SymBase sym = state.getSym(key);
+                SymBase sym = state.getLocalSym(key);
 
                 // handle switch case
                 List<IntConstant> caseValues = switchStmt.getLookupValues();
@@ -528,9 +565,14 @@ public class PathAnalyze {
                     SimState branchState = state.copy();
                     int caseIdx = SwitchCase2Int(caseValues, ii);
                     if (sym != null) {
-                        branchState.addConstraint(z3Ctx.mkEq(sym.getExpr(), v));
-                        if ( (branchState.addInstCount(switchStmt, caseIdx) <= Config.LoopLimit || AccessControlUtils.isAccessControlSym(sym)) 
-                                && (enableLazySolve || SymbolSolver.solveConstraintsSingle(this.z3Ctx,state.constraints))  ) {
+                        boolean isAccessControl = AccessControlUtils.isAccessControlSym(sym);
+                        if(isAccessControl){
+                            branchState.addGlobalConstraint(z3Ctx.mkEq(sym.getExpr(), v));
+                        } else{
+                            branchState.addLocalConstraint(z3Ctx.mkEq(sym.getExpr(), v));
+                        }
+                        if ( (branchState.addInstCount(switchStmt, caseIdx) <= Config.LoopLimit || isAccessControl) 
+                                && (enableLazySolve || SymbolSolver.solveConstraintsSingle(this.z3Ctx,branchState.getFullConstraints()))  ) {
                             doOne(target, branchState, false);
                         }
                     } else if(branchState.addInstCount(switchStmt, caseIdx) <= Config.LoopLimit){
@@ -542,10 +584,16 @@ public class PathAnalyze {
                 Unit defaultTarget = switchStmt.getDefaultTarget();
                 SimState branchState = state.copy();
                 if (sym != null) {
-                    branchState.addConstraint(z3Ctx.mkNot(z3Ctx.mkOr(caseValues.stream()
-                            .map(ii -> z3Ctx.mkEq(sym.getExpr(), z3Ctx.mkBV(ii.value, 32))).toArray(Expr[]::new))));
-                    if ( (branchState.addInstCount(switchStmt, 0) <= Config.LoopLimit || AccessControlUtils.isAccessControlSym(sym)) 
-                                && (enableLazySolve || SymbolSolver.solveConstraintsSingle(this.z3Ctx,state.constraints))  ) {
+                    boolean isAccessControl = AccessControlUtils.isAccessControlSym(sym);
+                    if(isAccessControl){
+                        branchState.addGlobalConstraint(z3Ctx.mkNot(z3Ctx.mkOr(caseValues.stream()
+                                .map(ii -> z3Ctx.mkEq(sym.getExpr(), z3Ctx.mkBV(ii.value, 32))).toArray(Expr[]::new))));
+                    } else{
+                        branchState.addLocalConstraint(z3Ctx.mkNot(z3Ctx.mkOr(caseValues.stream()
+                                .map(ii -> z3Ctx.mkEq(sym.getExpr(), z3Ctx.mkBV(ii.value, 32))).toArray(Expr[]::new))));
+                    }
+                    if ( (branchState.addInstCount(switchStmt, 0) <= Config.LoopLimit || isAccessControl) 
+                                && (enableLazySolve || SymbolSolver.solveConstraintsSingle(this.z3Ctx,branchState.getFullConstraints()))  ) {
                         doOne(defaultTarget, branchState,false);
                     }
                 } else
@@ -560,7 +608,7 @@ public class PathAnalyze {
 
              else if (curUnit instanceof JTableSwitchStmt tableSwitchStmt) {
                 Value key = tableSwitchStmt.getKey();
-                SymBase sym = state.getSym(key);
+                SymBase sym = state.getLocalSym(key);
 
                 // handle switch case
                 List<IntConstant> caseValues = getCaseValuesFromTableSwitch(tableSwitchStmt);
@@ -570,9 +618,14 @@ public class PathAnalyze {
                     SimState branchState = state.copy();
                     int caseIdx = SwitchCase2Int(caseValues, ii);
                     if (sym != null) {
-                        branchState.addConstraint(z3Ctx.mkEq(sym.getExpr(), v));
-                        if ( (branchState.addInstCount(tableSwitchStmt, caseIdx) <= Config.LoopLimit || AccessControlUtils.isAccessControlSym(sym))
-                                            && (enableLazySolve || SymbolSolver.solveConstraintsSingle(this.z3Ctx,state.constraints))  ) {
+                        boolean isAccessControl = AccessControlUtils.isAccessControlSym(sym);
+                        if(isAccessControl){
+                            branchState.addGlobalConstraint(z3Ctx.mkEq(sym.getExpr(), v));
+                        } else{
+                            branchState.addLocalConstraint(z3Ctx.mkEq(sym.getExpr(), v));
+                        }
+                        if ( (branchState.addInstCount(tableSwitchStmt, caseIdx) <= Config.LoopLimit || isAccessControl)
+                                            && (enableLazySolve || SymbolSolver.solveConstraintsSingle(this.z3Ctx,branchState.getFullConstraints()))  ) {
                             doOne(target, branchState, false);
                         }
                     } else if(branchState.addInstCount(tableSwitchStmt, 0) <= Config.LoopLimit){
@@ -584,10 +637,16 @@ public class PathAnalyze {
                 Unit defaultTarget = tableSwitchStmt.getDefaultTarget();
                 SimState branchState = state.copy();
                 if (sym != null) {
-                    branchState.addConstraint(z3Ctx.mkNot(z3Ctx.mkOr(caseValues.stream()
-                            .map(ii -> z3Ctx.mkEq(sym.getExpr(), z3Ctx.mkBV(ii.value, 32))).toArray(Expr[]::new))));
-                    if ( (branchState.addInstCount(tableSwitchStmt, 0) <= Config.LoopLimit || AccessControlUtils.isAccessControlSym(sym))
-                                           && (enableLazySolve || SymbolSolver.solveConstraintsSingle(this.z3Ctx,state.constraints))  ) {
+                    boolean isAccessControl = AccessControlUtils.isAccessControlSym(sym);
+                    if(isAccessControl){
+                        branchState.addGlobalConstraint(z3Ctx.mkNot(z3Ctx.mkOr(caseValues.stream()
+                                .map(ii -> z3Ctx.mkEq(sym.getExpr(), z3Ctx.mkBV(ii.value, 32))).toArray(Expr[]::new))));
+                    } else{
+                        branchState.addLocalConstraint(z3Ctx.mkNot(z3Ctx.mkOr(caseValues.stream()
+                                .map(ii -> z3Ctx.mkEq(sym.getExpr(), z3Ctx.mkBV(ii.value, 32))).toArray(Expr[]::new))));
+                    }
+                    if ( (branchState.addInstCount(tableSwitchStmt, 0) <= Config.LoopLimit || isAccessControl)
+                                           && (enableLazySolve || SymbolSolver.solveConstraintsSingle(this.z3Ctx,branchState.getFullConstraints()))  ) {
                         doOne(defaultTarget, branchState,false);
                     }
                 } else if(branchState.addInstCount(tableSwitchStmt, 0) <= Config.LoopLimit){
@@ -624,8 +683,14 @@ public class PathAnalyze {
             
             else if (curUnit instanceof JReturnStmt returnStmt) {
                 if (state.isCallStackEmpty()) {
+
+                    // ignore return null
+                    Value retValue = returnStmt.getOp();
+                    if(retValue instanceof NullConstant)
+                        return;
+
                     if (enableSolve)
-                        this.printSimplifyConstaints(state.constraints);
+                        this.printSimplifyConstaints(state.getGlobalConstraints());
                 } else { 
                     Value retValue = returnStmt.getOp();
                     SymBase retExpr = valueToSym(retValue,state);
@@ -646,7 +711,7 @@ public class PathAnalyze {
             else if (curUnit instanceof JReturnVoidStmt) {
                 if (state.isCallStackEmpty()) {
                     if (enableSolve)// Entry method
-                        this.printSimplifyConstaints(state.constraints);
+                        this.printSimplifyConstaints(state.getGlobalConstraints());
                 } else { // callee method
                     Unit ret = postInvoke(state);
                     doOne(ret, state, true);
@@ -723,11 +788,11 @@ public class PathAnalyze {
                 if(isEnforcePermission){
                     SimState throwState = state.copy();
                     Unit exceptionHandler = getExceptionHandler(curUnit, throwState, Scene.v().getRefType("java.lang.SecurityException"));
-                    if(exceptionHandler != null){ 
-                        throwState.popConstraint();
-                        SymBase permissionExpr = throwState.getLastSymbol();
-                        Expr permissionValue = this.z3Ctx.mkEq(permissionExpr.getExpr(), z3Ctx.mkBV(EnforcePermissionAPI.PERMISSION_SOFT_DENIED, 32));
-                        throwState.addConstraint(permissionValue);
+                    if(exceptionHandler != null ){ 
+                        throwState.popGlobalConstraint();
+                        SymBase permissionExpr = e;
+                        Expr permissionValue = this.z3Ctx.mkNot(this.z3Ctx.mkEq(permissionExpr.getExpr(), z3Ctx.mkBV(EnforcePermissionAPI.PERMISSION_GRANTED, 32)));
+                        throwState.addGlobalConstraint(permissionValue);
                         doOne(exceptionHandler, throwState, false);
                         // return;
                     } 
@@ -841,6 +906,18 @@ public class PathAnalyze {
             return;
         } else { // DO NOTHING
             Unit ret = postInvoke(state);
+
+            if (ret instanceof AssignStmt assign) {
+                Value left = assign.getLeftOp();
+                SymBase e = SymGen.makeSymbol(this.z3Ctx,left.getType(),left.toString());
+                if(e != null){
+                    updateValue(left, e, state);
+                }
+            } else if(ret instanceof JInvokeStmt invoke){
+               
+            } else {
+                Log.error("Unsupported Ret Unit type: " + ret.getClass());
+            }
             doOne(ret, state, true);
         }
         return;
@@ -877,6 +954,7 @@ public class PathAnalyze {
         }
         state.pushCall(curUnit);
         state.pushLocalMap();
+        state.pushLocalConstraints();
         state.pushParam(params);
         state.pushCFG();
         state.callDepth++;
@@ -887,6 +965,7 @@ public class PathAnalyze {
         state.callDepth--;
         state.popCFG();
         state.popParam();
+        state.popLocalConstraints();
         state.popLocalMap();
         return state.popCall();
     }
@@ -894,14 +973,15 @@ public class PathAnalyze {
     public void printSimplifyConstaints(List<Expr> constraints) {
         Log.info("================== [Solve] ========================");
         Context ctx = this.z3Ctx;
-        List<Expr> toSolve = new ArrayList<>();
-        for(Expr e : constraints){
-            if(AccessControlUtils.isAccessControlExpr(e)){
-                toSolve.add(e);
-            }
+        // List<Expr> toSolve = new ArrayList<>();
 
-        }
-        List<String> result = symbolSolver.solve(ctx, toSolve);
+        // for(Expr e : constraints){
+        //     if(AccessControlUtils.isAccessControlExpr(e)){
+        //         toSolve.add(e);
+        //     }
+        // }
+
+        List<String> result = SymbolSolver.solve(ctx, constraints);
         for(String s : result){
             Log.info(s);
         }
@@ -910,6 +990,7 @@ public class PathAnalyze {
         Log.info("===================================================");
         return;
     }
+
     public Set<List<String>> getAnalyzeResult() {
         Set<List<String>> uniqueLists = new LinkedHashSet<>();
         // 遍历原始列表，将其加入 Set 中

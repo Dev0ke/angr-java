@@ -44,6 +44,20 @@ public class HookSymbol {
         return null;
     }
 
+    // public static SymBase handleUserIDAPI(Context ctx, InvokeExpr expr, SimState state) {
+    //     String methodName = expr.getMethod().getName();
+    //     if (methodName.equals("getCallingUserId")) {
+    //         String symbolName = UID_PREFIX + "CallingUserId";
+    //         SymBase uid = state.getSymbolByName(symbolName);
+    //         if (uid == null) {
+    //             uid = SymGen.makeIntSym(ctx, symbolName);
+    //             state.addSymbol(uid);
+    //         }
+    //         return uid;
+    //     }
+    //     return null;
+    // }
+
     // TODO add uid limit
     public static SymBase handlePidAPI(Context ctx, InvokeExpr expr, SimState state) {
         String methodName = expr.getMethod().getName();
@@ -103,7 +117,7 @@ public class HookSymbol {
             for (int i : CheckAppOpAPI.POSSIBLE_APPOP_CHECK_RESULTS) {
                 possbileValueConstraints.add(ctx.mkEq(AppOpSym.getExpr(), ctx.mkBV(i, 32)));
             }
-            state.addConstraint(ctx.mkEq(ctx.mkOr(possbileValueConstraints.toArray(new Expr[0])), ctx.mkTrue()));
+            state.addGlobalConstraint(ctx.mkEq(ctx.mkOr(possbileValueConstraints.toArray(new Expr[0])), ctx.mkTrue()));
             return AppOpSym;
         }
         return null;
@@ -116,6 +130,7 @@ public class HookSymbol {
 
         //enforcePermission
         if (EnforcePermissionAPI.isEnforcePermissionAPI(className, methodName)) {
+            Log.warn("---  EnforcePermissionAPI: " + className + "." + methodName);
             SymBase param = params.get(0);
             String permissionValue;
             if (param instanceof SymString symString) {
@@ -132,12 +147,13 @@ public class HookSymbol {
                 state.addSymbol(permissionSym);
             }
             Expr enforceExpr = ctx.mkEq(permissionSym.getExpr(), ctx.mkBV(PERMISSION_GRANTED, 32));
-            state.addConstraint(enforceExpr);
+            state.addGlobalConstraint(enforceExpr);
             return permissionSym;
 
 
         // checkPermission
         } else if (CheckPermissionAPI.isCheckPermissionAPI(className, methodName)) {
+            Log.warn("---  CheckPermissionAPI: " + className + "." + methodName);
             String permissionValue;
             SymBase param = params.get(0);
             if (param instanceof SymString symString) {
@@ -160,7 +176,7 @@ public class HookSymbol {
             for (int i : EnforcePermissionAPI.POSSIBLE_PERMISSIONS_CHECK_RESULTS) {
                 possbileValueConstraints.add(ctx.mkEq(permissionSym.getExpr(), ctx.mkBV(i, 32)));
             }
-            state.addConstraint(ctx.mkEq(ctx.mkOr(possbileValueConstraints.toArray(new Expr[0])), ctx.mkTrue()));
+            state.addGlobalConstraint(ctx.mkEq(ctx.mkOr(possbileValueConstraints.toArray(new Expr[0])), ctx.mkTrue()));
             return permissionSym;
         }
         return null;

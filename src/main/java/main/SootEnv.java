@@ -66,7 +66,7 @@ public class SootEnv {
         
         Options.v().set_wrong_staticness(Options.wrong_staticness_ignore);
         //call graph
-        // Options.v().setPhaseOption("cg.spark", "on");
+        Options.v().setPhaseOption("cg.spark", "on");
         
         // 设置输出格式为 Jimple 格式
         // Options.v().set_output_format(Options.output_format_jimple);

@@ -51,42 +51,42 @@ public class AccessControlUtils {
         
         // 使用 merge 操作合并所有 API Map
         EnforcePermissionAPI.apiMap.forEach((className, methods) -> 
-            accessControlAPI.merge(className, methods, (existing, newSet) -> {
+            accessControlAPI.merge(className, new HashSet<>(methods), (existing, newSet) -> {
                 existing.addAll(newSet);
                 return existing;
             })
         );
         
         CheckAppOpAPI.apiMap.forEach((className, methods) -> 
-            accessControlAPI.merge(className, methods, (existing, newSet) -> {
+            accessControlAPI.merge(className, new HashSet<>(methods), (existing, newSet) -> {
                 existing.addAll(newSet);
                 return existing;
             })
         );
         
         CheckUidAPI.apiMap.forEach((className, methods) -> 
-            accessControlAPI.merge(className, methods, (existing, newSet) -> {
+            accessControlAPI.merge(className, new HashSet<>(methods), (existing, newSet) -> {
                 existing.addAll(newSet);
                 return existing;
             })
         );
         
         CheckPidAPI.apiMap.forEach((className, methods) -> 
-            accessControlAPI.merge(className, methods, (existing, newSet) -> {
+            accessControlAPI.merge(className, new HashSet<>(methods), (existing, newSet) -> {
                 existing.addAll(newSet);
                 return existing;
             })
         );
         
         CheckPackageNameAPI.apiMap.forEach((className, methods) -> 
-            accessControlAPI.merge(className, methods, (existing, newSet) -> {
+            accessControlAPI.merge(className, new HashSet<>(methods), (existing, newSet) -> {
                 existing.addAll(newSet);
                 return existing;
             })
         );
         
         CheckPermissionAPI.apiMap.forEach((className, methods) -> 
-            accessControlAPI.merge(className, methods, (existing, newSet) -> {
+            accessControlAPI.merge(className, new HashSet<>(methods), (existing, newSet) -> {
                 existing.addAll(newSet);
                 return existing;
             })

@@ -5,7 +5,7 @@ public class Config {
     // Basic Config
     public static int threads = 128;
     // public static boolean useExistJimple = true;
-    public static String logLevel = "INFO";
+    public static String logLevel = "OFF";
     // Analysis Config
     public static boolean enableLazySolve = false;
     public static boolean enableInterAnalysis = true;
