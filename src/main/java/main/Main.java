@@ -2,11 +2,11 @@ package main;
 
 import accessControl.CheckAppOpAPI;
 import accessControl.EnforcePermissionAPI;
+import entry.APIFinder;
+import entry.APIFinder2;
+import entry.APIFinder3;
 import accessControl.CheckPidAPI;
 import accessControl.CheckUidAPI;
-import module.APIFinder;
-import module.APIFinder2;
-import module.APIFinder3;
 import module.CheckFinder;
 import module.JimpleConverter;
 import module.PathAnalyze;
@@ -249,12 +249,12 @@ public class Main {
     private static void processMethod(SootMethod m, String className, String methodSignature,
             ResultExporter resultExporter, AtomicInteger success) throws TimeoutException {
         long paStartTime = System.currentTimeMillis();
-        // CheckFinder cf = new CheckFinder(m);
-        // HashSet<SootMethod> CheckNodes = cf.runFind();
-        // PathAnalyze pa = new PathAnalyze(m,CheckNodes);
-        // pa.startAnalyze();
-        // Set<List<String>> result = pa.getAnalyzeResult();
-        Set<List<String>> result = new HashSet<>();
+        CheckFinder cf = new CheckFinder(m);
+        HashSet<SootMethod> CheckNodes = cf.runFind();
+        PathAnalyze pa = new PathAnalyze(m,CheckNodes);
+        pa.startAnalyze();
+        Set<List<String>> result = pa.getAnalyzeResult();
+        // Set<List<String>> result = new HashSet<>();
         long paEndTime = System.currentTimeMillis();
         resultExporter.writeResult(ResultExporter.CODE_SUCCESS, className, methodSignature, result,
                 paEndTime - paStartTime, "");
@@ -515,8 +515,8 @@ public class Main {
     public static String defaultinputPath = inputPath_7;
 
     public static void main(String[] args) {
-        Config.logLevel = "INFO";
-        // Config.logLevel = "OFF";
+        // Config.logLevel = "INFO";
+        Config.logLevel = "OFF";
         init();
         // test_oppo();
         // test_arc_api(Config.AOSP_601_ARCADE, 23, inputPath_6);
