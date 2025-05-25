@@ -40,7 +40,7 @@ public class PathAnalyze {
         this.CheckMethods = CheckMethods;
         this.entryMethod = entryMethod;
         this.analyzeResult = new ArrayList<>();
-        this.z3Ctx = Z3ContextPool.getInstance().borrowContext();
+        this.z3Ctx = new Context();
         this.enableSolve = false;
         // 初始化已求解约束集合
         this.solvedConstraints = new HashSet<>();
@@ -1069,8 +1069,7 @@ public class PathAnalyze {
     public void close(){
         // 将Z3上下文归还到池中而不是直接关闭
         if (this.z3Ctx != null) {
-            Z3ContextPool.getInstance().returnContext(this.z3Ctx);
-            this.z3Ctx = null;
+            this.z3Ctx.close();
         }
         
         // 清理已求解约束集合
