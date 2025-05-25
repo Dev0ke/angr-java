@@ -1,4 +1,4 @@
-package module;
+package solver;
 
 import com.microsoft.z3.*;
 import java.util.*;

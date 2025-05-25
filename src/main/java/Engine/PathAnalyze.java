@@ -1,18 +1,13 @@
-package module;
+package Engine;
 
 import accessControl.*;
 
 import init.Config;
+import module.HookSymbol;
+import solver.SymbolSolver;
 
 import com.microsoft.z3.Context;
 import com.microsoft.z3.Expr;
-
-import Engine.SimState;
-import Engine.SymList;
-import Engine.SymBase;
-import Engine.SymGen;
-import Engine.SymString;
-// import Engine.SymbolSolver;
 
 import soot.*;
 import soot.jimple.*;
@@ -34,15 +29,23 @@ public class PathAnalyze {
     public boolean enableSolve;
     public List<List<String>> analyzeResult;
     public HashSet<SootMethod> CheckMethods;
-
-    private static final Map<String, String> DEFAULT_CTX_CONFIG = Map.of("model", "true");
+    
+    // 记录已求解的约束键，避免重复求解
+    private Set<String> solvedConstraints;
+    
+    // 缓存 solveConstraintsSingle 的结果
+    private Map<String, Boolean> constraintsSingleCache;
 
     public PathAnalyze(SootMethod entryMethod,HashSet<SootMethod> CheckMethods) {
         this.CheckMethods = CheckMethods;
         this.entryMethod = entryMethod;
         this.analyzeResult = new ArrayList<>();
-        this.z3Ctx = new Context(DEFAULT_CTX_CONFIG);
+        this.z3Ctx = Z3ContextPool.getInstance().borrowContext();
         this.enableSolve = false;
+        // 初始化已求解约束集合
+        this.solvedConstraints = new HashSet<>();
+        // 初始化 solveConstraintsSingle 缓存
+        this.constraintsSingleCache = new HashMap<>();
         // start
         Log.info("[+] Start PathAnalyze in API: " + this.entryMethod.getName());
 
@@ -53,7 +56,7 @@ public class PathAnalyze {
         List<SymBase> entryParams = new ArrayList<>();
         for(int i = 0; i < paramTypes.size(); i++){
             Type paramType = paramTypes.get(i);
-            String name = String.format("<PARAM>%s_x%d",paramType.toString(),i);
+            String name = String.format("<INPUT>%s_x%d",paramType.toString(),i);
             SymBase paramExpr = SymGen.makeSymbol(this.z3Ctx,paramType,name);
             entryParams.add(paramExpr);
         }
@@ -288,44 +291,44 @@ public class PathAnalyze {
                     boolean isAccessControl = AccessControlUtils.isAccessControlSym(result);
 
                     // TODO 感觉需要修复一下
-                    if(state_true.getBranchDepth() > Config.branchLimit  && !isAccessControl){
-                        Log.info("Branch Limit: " + state_true.getBranchDepth());
+                    // if(state_true.getBranchDepth() > Config.branchLimit  && !isAccessControl){
+                    //     Log.info("Branch Limit: " + state_true.getBranchDepth());
 
-                        int choice = 0;
-                        int branchCount0 = state_true.getBranchCount(curUnit,0);
-                        int branchCount1 = state_true.getBranchCount(curUnit,1);
-                        if(branchCount0 > branchCount1){
-                            choice = 1;
-                        } else if(branchCount0 < branchCount1){
-                            choice = 0;
-                        } else {
-                            Random random = new Random();
-                            choice = random.nextInt(2);
-                        }
+                    //     int choice = 0;
+                    //     int branchCount0 = state_true.getBranchCount(curUnit,0);
+                    //     int branchCount1 = state_true.getBranchCount(curUnit,1);
+                    //     if(branchCount0 > branchCount1){
+                    //         choice = 1;
+                    //     } else if(branchCount0 < branchCount1){
+                    //         choice = 0;
+                    //     } else {
+                    //         Random random = new Random();
+                    //         choice = random.nextInt(2);
+                    //     }
 
-                        // TRUE state
-                        if(choice == 0){ 
-                            if(isAccessControl){
-                                state_true.addGlobalConstraint(resultExpr);
-                            } else{
-                                state_true.addLocalConstraint(resultExpr);
-                            }
-                            state_true.addInstCount(curUnit,0);
-                            doOne(branch_true, state_true, false);
-                        }
+                    //     // TRUE state
+                    //     if(choice == 0){ 
+                    //         if(isAccessControl){
+                    //             state_true.addGlobalConstraint(resultExpr);
+                    //         } else{
+                    //             state_true.addLocalConstraint(resultExpr);
+                    //         }
+                    //         state_true.addInstCount(curUnit,0);
+                    //         doOne(branch_true, state_true, false);
+                    //     }
 
-                        // FALSE state
-                        else{ 
-                            if(isAccessControl){
-                                state_false.addGlobalConstraint(this.z3Ctx.mkNot(resultExpr));
-                            } else{
-                                state_false.addLocalConstraint(this.z3Ctx.mkNot(resultExpr));
-                            }
-                            state_false.addInstCount(curUnit,1);
-                            doOne(branch_false, state_false, false);      
-                        }
-                        return;
-                    }
+                    //     // FALSE state
+                    //     else{ 
+                    //         if(isAccessControl){
+                    //             state_false.addGlobalConstraint(this.z3Ctx.mkNot(resultExpr));
+                    //         } else{
+                    //             state_false.addLocalConstraint(this.z3Ctx.mkNot(resultExpr));
+                    //         }
+                    //         state_false.addInstCount(curUnit,1);
+                    //         doOne(branch_false, state_false, false);      
+                    //     }
+                    //     return;
+                    // }
 
                     Log.info("|- IfStmt 1, condition [TRUE]: " + condition);
                     if(isAccessControl){
@@ -334,10 +337,11 @@ public class PathAnalyze {
                         state_true.addLocalConstraint(resultExpr);
                     }
                     if ((state_true.addInstCount(curUnit,0) <= Config.LoopLimit ||  isAccessControl ) ){
-                        if(enableLazySolve || SymbolSolver.solveConstraintsSingle(this.z3Ctx,state_true.getFullConstraints()))
+                        if(enableLazySolve || solveConstraintsSingleWithCache(state_true.getFullConstraints()))
                             doOne(branch_true, state_true, false);
-                        else
+                        else{
                             Log.info("unsat branch");
+                        }
                     } else {
                         Log.info("Limit branch");
                     }
@@ -350,7 +354,7 @@ public class PathAnalyze {
                         state_false.addLocalConstraint(this.z3Ctx.mkNot(resultExpr));
                     }
                     if ((state_false.addInstCount(curUnit,1) <= Config.LoopLimit ||  isAccessControl ) ) {
-                        if(enableLazySolve || SymbolSolver.solveConstraintsSingle(this.z3Ctx,state_false.getFullConstraints()))
+                        if(enableLazySolve || solveConstraintsSingleWithCache(state_false.getFullConstraints()))
                             doOne(branch_false, state_false,  false);
                         else
                             Log.info("unsat branch");
@@ -360,33 +364,34 @@ public class PathAnalyze {
                     return;
 
                 } else {
-                    if(state_true.getBranchDepth() > Config.branchLimit && !AccessControlUtils.isAccessControlSym(result)){
-                        Log.info("Branch Limit: " + state_true.getBranchDepth());
 
-                        int choice = 0;
-                        int branchCount0 = state_true.getBranchCount(curUnit,0);
-                        int branchCount1 = state_true.getBranchCount(curUnit,1);
-                        if(branchCount0 > branchCount1){
-                            choice = 1;
-                        } else if(branchCount0 < branchCount1){
-                            choice = 0;
-                        } else {
-                            Random random = new Random();
-                            choice = random.nextInt(2);
-                        }
+                    // if(state_true.getBranchDepth() > Config.branchLimit && !AccessControlUtils.isAccessControlSym(result)){
+                    //     Log.info("Branch Limit: " + state_true.getBranchDepth());
 
-                        // choose branch
-                        if(choice == 0){
-                            // branchState.addConstraint(resultExpr);
-                            state_true.addInstCount(curUnit,0);
-                            doOne(branch_true, state_true, false);
-                        } else{
-                            // state.addConstraint(this.z3Ctx.mkNot(resultExpr));
-                            state_false.addInstCount(curUnit,1);
-                            doOne(branch_false, state_false, false);      
-                        }
-                        return;
-                    }
+                    //     int choice = 0;
+                    //     int branchCount0 = state_true.getBranchCount(curUnit,0);
+                    //     int branchCount1 = state_true.getBranchCount(curUnit,1);
+                    //     if(branchCount0 > branchCount1){
+                    //         choice = 1;
+                    //     } else if(branchCount0 < branchCount1){
+                    //         choice = 0;
+                    //     } else {
+                    //         Random random = new Random();
+                    //         choice = random.nextInt(2);
+                    //     }
+
+                    //     // choose branch
+                    //     if(choice == 0){
+                    //         // branchState.addConstraint(resultExpr);
+                    //         state_true.addInstCount(curUnit,0);
+                    //         doOne(branch_true, state_true, false);
+                    //     } else{
+                    //         // state.addConstraint(this.z3Ctx.mkNot(resultExpr));
+                    //         state_false.addInstCount(curUnit,1);
+                    //         doOne(branch_false, state_false, false);      
+                    //     }
+                    //     return;
+                    // }
 
                     if (state_true.addInstCount(curUnit,0) <= Config.LoopLimit) {
                         // TODO Add constraint 
@@ -572,7 +577,7 @@ public class PathAnalyze {
                             branchState.addLocalConstraint(z3Ctx.mkEq(sym.getExpr(), v));
                         }
                         if ( (branchState.addInstCount(switchStmt, caseIdx) <= Config.LoopLimit || isAccessControl) 
-                                && (enableLazySolve || SymbolSolver.solveConstraintsSingle(this.z3Ctx,branchState.getFullConstraints()))  ) {
+                                && (enableLazySolve || solveConstraintsSingleWithCache(branchState.getFullConstraints()))  ) {
                             doOne(target, branchState, false);
                         }
                     } else if(branchState.addInstCount(switchStmt, caseIdx) <= Config.LoopLimit){
@@ -593,7 +598,7 @@ public class PathAnalyze {
                                 .map(ii -> z3Ctx.mkEq(sym.getExpr(), z3Ctx.mkBV(ii.value, 32))).toArray(Expr[]::new))));
                     }
                     if ( (branchState.addInstCount(switchStmt, 0) <= Config.LoopLimit || isAccessControl) 
-                                && (enableLazySolve || SymbolSolver.solveConstraintsSingle(this.z3Ctx,branchState.getFullConstraints()))  ) {
+                                && (enableLazySolve || solveConstraintsSingleWithCache(branchState.getFullConstraints()))  ) {
                         doOne(defaultTarget, branchState,false);
                     }
                 } else
@@ -625,7 +630,7 @@ public class PathAnalyze {
                             branchState.addLocalConstraint(z3Ctx.mkEq(sym.getExpr(), v));
                         }
                         if ( (branchState.addInstCount(tableSwitchStmt, caseIdx) <= Config.LoopLimit || isAccessControl)
-                                            && (enableLazySolve || SymbolSolver.solveConstraintsSingle(this.z3Ctx,branchState.getFullConstraints()))  ) {
+                                            && (enableLazySolve || solveConstraintsSingleWithCache(branchState.getFullConstraints()))  ) {
                             doOne(target, branchState, false);
                         }
                     } else if(branchState.addInstCount(tableSwitchStmt, 0) <= Config.LoopLimit){
@@ -646,7 +651,7 @@ public class PathAnalyze {
                                 .map(ii -> z3Ctx.mkEq(sym.getExpr(), z3Ctx.mkBV(ii.value, 32))).toArray(Expr[]::new))));
                     }
                     if ( (branchState.addInstCount(tableSwitchStmt, 0) <= Config.LoopLimit || isAccessControl)
-                                           && (enableLazySolve || SymbolSolver.solveConstraintsSingle(this.z3Ctx,branchState.getFullConstraints()))  ) {
+                                           && (enableLazySolve || solveConstraintsSingleWithCache(branchState.getFullConstraints()))  ) {
                         doOne(defaultTarget, branchState,false);
                     }
                 } else if(branchState.addInstCount(tableSwitchStmt, 0) <= Config.LoopLimit){
@@ -970,8 +975,64 @@ public class PathAnalyze {
         return state.popCall();
     }
 
+    /**
+     * 生成约束集合的缓存键
+     * 通过将约束转换为字符串并排序来确保相同约束集合有相同的缓存键
+     * @param constraints 约束列表
+     * @return 缓存键字符串
+     */
+    private String generateConstraintCacheKey(List<Expr> constraints) {
+        if (constraints == null || constraints.isEmpty()) {
+            return "EMPTY_CONSTRAINTS";
+        }
+        
+        // 将约束转换为字符串并排序
+        List<String> constraintStrings = new ArrayList<>();
+        for (Expr constraint : constraints) {
+            constraintStrings.add(constraint.toString());
+        }
+        Collections.sort(constraintStrings);
+        
+        // 计算排序后字符串的哈希值
+        return String.valueOf(constraintStrings.hashCode());
+    }
+
+    /**
+     * 带缓存的约束可满足性检查
+     * 如果相同的约束已经求解过，直接返回缓存的结果
+     * @param constraints 约束列表
+     * @return 约束是否可满足
+     */
+    private boolean solveConstraintsSingleWithCache(List<Expr> constraints) {
+        // 生成缓存键
+        String cacheKey = generateConstraintCacheKey(constraints);
+        
+        // 检查缓存中是否存在结果
+        if (constraintsSingleCache.containsKey(cacheKey)) {
+            return constraintsSingleCache.get(cacheKey);
+        }
+        
+        // 缓存中不存在，执行求解
+        boolean result = SymbolSolver.solveConstraintsSingle(this.z3Ctx, constraints);
+        
+        // 将结果存入缓存
+        constraintsSingleCache.put(cacheKey, result);
+        
+        return result;
+    }
+
     public void printSimplifyConstaints(List<Expr> constraints) {
+
+        
+        // 生成缓存键
+        String cacheKey = generateConstraintCacheKey(constraints);
+        
+        // 检查是否已经求解过相同的约束
+        if (solvedConstraints.contains(cacheKey)) {
+            return;
+        }
         Log.info("================== [Solve] ========================");
+
         Context ctx = this.z3Ctx;
         // List<Expr> toSolve = new ArrayList<>();
 
@@ -982,6 +1043,10 @@ public class PathAnalyze {
         // }
 
         List<String> result = SymbolSolver.solve(ctx, constraints);
+        
+        // 记录已求解的约束
+        solvedConstraints.add(cacheKey);
+        
         for(String s : result){
             Log.info(s);
         }
@@ -1002,8 +1067,20 @@ public class PathAnalyze {
     }
 
     public void close(){
-        this.z3Ctx.close();
-
+        // 将Z3上下文归还到池中而不是直接关闭
+        if (this.z3Ctx != null) {
+            Z3ContextPool.getInstance().returnContext(this.z3Ctx);
+            this.z3Ctx = null;
+        }
+        
+        // 清理已求解约束集合
+        if (this.solvedConstraints != null) {
+            this.solvedConstraints.clear();
+        }
+        // 清理 solveConstraintsSingle 缓存
+        if (this.constraintsSingleCache != null) {
+            this.constraintsSingleCache.clear();
+        }
     }
 
 }

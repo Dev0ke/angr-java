@@ -1,8 +1,9 @@
-package module;
+package solver;
 
 import com.microsoft.z3.*;
 import com.microsoft.z3.enumerations.Z3_ast_kind;
 import com.microsoft.z3.enumerations.Z3_sort_kind;
+
 import java.util.*;
 
 public class SymbolSolver {

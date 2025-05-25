@@ -1,42 +1,46 @@
 package main;
 
-import accessControl.CheckAppOpAPI;
-import accessControl.EnforcePermissionAPI;
-import entry.APIFinder;
-import entry.APIFinder2;
-import entry.APIFinder3;
-import accessControl.CheckPidAPI;
-import accessControl.CheckUidAPI;
-import module.CheckFinder;
-import module.JimpleConverter;
-import module.PathAnalyze;
-
-import soot.SootMethod;
-import soot.options.Options;
-
-import utils.FirmwareUtils;
-import utils.Log;
-import init.Config;
-import utils.ResultExporter;
-
-
 import java.util.ArrayList;
-
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Set;
-
 import java.util.List;
 import java.util.concurrent.*;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
-
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
-import module.ClearDetector;
+import java.util.Collection;
+
+import accessControl.CheckAppOpAPI;
+import accessControl.EnforcePermissionAPI;
+import accessControl.CheckPidAPI;
+import accessControl.CheckUidAPI;
 import accessControl.CheckPermissionAPI;
+
+import entry.APIFinder;
+import entry.APIFinder2;
+import entry.APIFinder3;
+
+import module.CheckFinder;
+import module.JimpleConverter;
+
+import soot.SootMethod;
+import soot.options.Options;
+
+import utils.FirmwareUtils;
+import utils.Log;
+import utils.ResultExporter;
+
+import init.Config;
+
+
+
+import Engine.PathAnalyze;
+import module.ClearDetector;
+
+
 public class Main {
 
     public static void init() {
@@ -49,18 +53,6 @@ public class Main {
     }
 
     public static void test_full_api(int APIversion,String inputPath) {
-
-        // 1. 预先加载API列表
-        // HashMap<String, List<String>> apiList = readAPIfromFile(Config.AOSP_601_ARCADE);
-
-        // 2. 使用计数器对象替代原始类型，避免并发问题
-        AtomicInteger count = new AtomicInteger(0);
-        AtomicInteger success = new AtomicInteger(0);
-        AtomicInteger timeoutCount = new AtomicInteger(0);
-        AtomicInteger errorCount = new AtomicInteger(0);
-
-        
-        // 3. 优化线程池配置
         int processors = Config.threads;
         ThreadPoolExecutor executor = new ThreadPoolExecutor(
                 processors, // 核心线程数
@@ -102,6 +94,9 @@ public class Main {
             }
         }
 
+        // 预加载所有SootMethod对象
+        Map<String, SootMethod> preloadedMethods = preloadSootMethods(apiList2, sootEnv);
+
         // System.exit(0);
 
         // 5. 使用批处理方式处理任务
@@ -117,24 +112,21 @@ public class Main {
                 // List<String> EXmethodSigns = apiList2.get(className);
                 // if(EXmethodSigns != null && EXmethodSigns.contains(methodSign))
                 //     continue;
-                count.incrementAndGet();
                 Future<?> future = executor.submit(() -> {
                     try {
-                        SootMethod m = null;
-                        try {
-                            m = sootEnv.getMethodBySignature(className, methodSign);
-                        } catch (Exception e) {
-                            //convert sign to method name
-                            String methodName = methodSign.substring(0, methodSign.indexOf('('));
-                            methodName = methodName.substring(methodName.lastIndexOf(' ') + 1);
-                            m = sootEnv.getMethodByName(className, methodName);
+                        String key = className + "#" + methodSign;
+                        SootMethod m = preloadedMethods.get(key);
+                        
+                        if (m != null) {
+                            processMethod(m, className, methodSign, resultExporter);
+                        } else {
+                            Log.warn("Skipping unpreloaded method: " + className + "." + methodSign);
+                            handleError(className, methodSign, resultExporter, 
+                                new RuntimeException("Method not successfully resolved during preloading phase"));
                         }
-                        processMethod(m, className, methodSign, resultExporter, success);
                     } catch (TimeoutException e) {
-                        timeoutCount.incrementAndGet();
                         handleTimeout(className, methodSign, resultExporter, e);
                     } catch (Exception e) {
-                        errorCount.incrementAndGet();
                         handleError(className, methodSign, resultExporter, e);
                     }
                 });
@@ -166,11 +158,6 @@ public class Main {
         // 1. 预先加载API列表
         HashMap<String, List<String>> apiList = readAPIfromFile(arcade_api_path);
 
-        // 2. 使用计数器对象替代原始类型，避免并发问题
-        AtomicInteger count = new AtomicInteger(0);
-        AtomicInteger success = new AtomicInteger(0);
-        AtomicInteger timeoutCount = new AtomicInteger(0);
-        AtomicInteger errorCount = new AtomicInteger(0);
 
         // 3. 优化线程池配置
         int processors = Runtime.getRuntime().availableProcessors();
@@ -190,6 +177,10 @@ public class Main {
         Log.info("[-] Total files: " + allFiles.size());
         SootEnv sootEnv = new SootEnv(androidJarPath, allFiles, Options.src_prec_apk);
         sootEnv.initEnv();
+        
+        // 预加载所有SootMethod对象
+        Map<String, SootMethod> preloadedMethods = preloadSootMethods(apiList, sootEnv);
+        
         // 5. 使用批处理方式处理任务
         ResultExporter resultExporter = new ResultExporter(Config.resultPath);
         List<Future<?>> futures = new ArrayList<>();
@@ -201,24 +192,22 @@ public class Main {
 
             // 6. 批量提交任务
             for (String methodSign : methodList) {
-                count.incrementAndGet();
+
                 Future<?> future = executor.submit(() -> {
                     try {
-                        SootMethod m = null;
-                        try {
-                            m = sootEnv.getMethodBySignature(className, methodSign);
-                        } catch (Exception e) {
-                            //convert sign to method name
-                            String methodName = methodSign.substring(0, methodSign.indexOf('('));
-                            methodName = methodName.substring(methodName.lastIndexOf(' ') + 1);
-                            m = sootEnv.getMethodByName(className, methodName);
+                        String key = className + "#" + methodSign;
+                        SootMethod m = preloadedMethods.get(key);
+                        
+                        if (m != null) {
+                            processMethod(m, className, methodSign, resultExporter);
+                        } else {
+                            Log.warn("Skipping unpreloaded method: " + className + "." + methodSign);
+                            handleError(className, methodSign, resultExporter, 
+                                new RuntimeException("Method not successfully resolved during preloading phase"));
                         }
-                        processMethod(m, className, methodSign, resultExporter, success);
                     } catch (TimeoutException e) {
-                        timeoutCount.incrementAndGet();
                         handleTimeout(className, methodSign, resultExporter, e);
                     } catch (Exception e) {
-                        errorCount.incrementAndGet();
                         handleError(className, methodSign, resultExporter, e);
                     } 
                 });
@@ -247,31 +236,83 @@ public class Main {
 
     // 抽取的辅助方法
     private static void processMethod(SootMethod m, String className, String methodSignature,
-            ResultExporter resultExporter, AtomicInteger success) throws TimeoutException {
+            ResultExporter resultExporter) throws TimeoutException {
         long paStartTime = System.currentTimeMillis();
         CheckFinder cf = new CheckFinder(m);
         HashSet<SootMethod> CheckNodes = cf.runFind();
         PathAnalyze pa = new PathAnalyze(m,CheckNodes);
-        pa.startAnalyze();
-        Set<List<String>> result = pa.getAnalyzeResult();
-        // Set<List<String>> result = new HashSet<>();
-        long paEndTime = System.currentTimeMillis();
-        resultExporter.writeResult(ResultExporter.CODE_SUCCESS, className, methodSignature, result,
-                paEndTime - paStartTime, "");
-        success.incrementAndGet();
-        // pa.close();
+        try {
+            pa.startAnalyze();
+            Set<List<String>> result = pa.getAnalyzeResult();
+            long paEndTime = System.currentTimeMillis();
+            resultExporter.writeResult(ResultExporter.CODE_SUCCESS, className, methodSignature, result,
+                    paEndTime - paStartTime, "");
+        } finally {
+            // 确保Z3上下文被正确关闭，防止内存泄漏
+            pa.close();
+        }
     }
 
+    /**
+     * 预加载所有SootMethod对象，避免工作线程并发访问Soot核心解析功能
+     * @param apiList API列表，支持HashSet<String>和List<String>两种类型
+     * @param sootEnv SootEnv对象
+     * @return 预加载的方法映射，键为"className#methodSignature"，值为SootMethod对象
+     */
+    private static Map<String, SootMethod> preloadSootMethods(Map<String, ? extends Collection<String>> apiList, SootEnv sootEnv) {
+        Map<String, SootMethod> preloadedMethods = new HashMap<>();
+        int totalMethods = 0;
+        int successCount = 0;
+        int failureCount = 0;
+        
+        Log.info("Starting SootMethod preloading...");
+        
+        for (Map.Entry<String, ? extends Collection<String>> entry : apiList.entrySet()) {
+            String className = entry.getKey();
+            Collection<String> methodList = entry.getValue();
+            
+            for (String methodSign : methodList) {
+                totalMethods++;
+                String key = className + "#" + methodSign;
+                
+                try {
+                    SootMethod m = null;
+                    try {
+                        // 首先尝试通过签名获取方法
+                        m = sootEnv.getMethodBySignature(className, methodSign);
+                    } catch (Exception e) {
+                        // 如果签名解析失败，尝试通过方法名获取
+                        String methodName = methodSign.substring(0, methodSign.indexOf('('));
+                        methodName = methodName.substring(methodName.lastIndexOf(' ') + 1);
+                        m = sootEnv.getMethodByName(className, methodName);
+                    }
+                    
+                    if (m != null) {
+                        preloadedMethods.put(key, m);
+                        successCount++;
+                    } else {
+                        Log.warn("Preload failed: Unable to get method " + className + "." + methodSign);
+                        failureCount++;
+                    }
+                } catch (Exception e) {
+                    Log.warn("Preload failed: " + className + "." + methodSign + " - " + e.getMessage());
+                    failureCount++;
+                }
+            }
+        }
+        
+        Log.info("SootMethod preloading completed - Total: " + totalMethods + ", Success: " + successCount + ", Failed: " + failureCount);
+        return preloadedMethods;
+    }
 
     private static void find_clearAPI(SootMethod m, String className, String methodSignature,
-            ResultExporter resultExporter, AtomicInteger success) throws TimeoutException {
+            ResultExporter resultExporter) throws TimeoutException {
         // long paStartTime = System.currentTimeMillis();
         ClearDetector cf2 = new ClearDetector(m);
         cf2.runFind();
         // long paEndTime = System.currentTimeMillis();
         // resultExporter.writeResult(ResultExporter.CODE_SUCCESS, className, methodSignature, ,
         //         paEndTime - paStartTime, "");
-        success.incrementAndGet();
     }
     private static void handleTimeout(String className, String methodName,
             ResultExporter resultExporter, Exception e) {
@@ -335,10 +376,7 @@ public class Main {
 
 
     public static void test_oppo() {
-        AtomicInteger count = new AtomicInteger(0);
-        AtomicInteger success = new AtomicInteger(0);
 
-        AtomicInteger errorCount = new AtomicInteger(0);
         // 3. 优化线程池配置
         int processors = Runtime.getRuntime().availableProcessors();
         ThreadPoolExecutor executor = new ThreadPoolExecutor(
@@ -366,6 +404,8 @@ public class Main {
         HashMap<String,List<String>> apiList2 = APIFinder.findServiceAPI();
         Log.info("[-] Total API: " + apiList2.size());
 
+        // 预加载所有SootMethod对象
+        Map<String, SootMethod> preloadedMethods = preloadSootMethods(apiList2, sootEnv);
 
         // 5. 使用批处理方式处理任务
         ResultExporter resultExporter = new ResultExporter(Config.resultPath);
@@ -377,23 +417,22 @@ public class Main {
 
             // 6. 批量提交任务
             for (String methodSign : methodList) {
-                count.incrementAndGet();
+
                 Future<?> future = executor.submit(() -> {
                     try {
-                        SootMethod m = null;
-                        try {
-                            m = sootEnv.getMethodBySignature(className, methodSign);
-                        } catch (Exception e) {
-                            //convert sign to method name
-                            String methodName = methodSign.substring(0, methodSign.indexOf('('));
-                            methodName = methodName.substring(methodName.lastIndexOf(' ') + 1);
-                            m = sootEnv.getMethodByName(className, methodName);
+                        String key = className + "#" + methodSign;
+                        SootMethod m = preloadedMethods.get(key);
+                        
+                        if (m != null) {
+                            find_clearAPI(m, className, methodSign, resultExporter);
+                        } else {
+                            Log.warn("Skipping unpreloaded method: " + className + "." + methodSign);
+                            handleError(className, methodSign, resultExporter, 
+                                new RuntimeException("Method not successfully resolved during preloading phase"));
                         }
-                        find_clearAPI(m, className, methodSign, resultExporter, success);
                         // Log.info(className + "\t\t" + methodSign);
                   
                     } catch (Exception e) {
-                        errorCount.incrementAndGet();
                         handleError(className, methodSign, resultExporter, e);
                     }
                 });
@@ -516,15 +555,22 @@ public class Main {
 
     public static void main(String[] args) {
         // Config.logLevel = "INFO";
-        Config.logLevel = "OFF";
         init();
+        long startTime = System.currentTimeMillis();
         // test_oppo();
         // test_arc_api(Config.AOSP_601_ARCADE, 23, inputPath_6);
-        // test_arc_api(Config.AOSP_7_ARCADE, 24, inputPath_7);
-        test_full_api(24, inputPath_7);
+        test_arc_api(Config.AOSP_7_ARCADE, 24, inputPath_7);
+        // test_full_api(24, inputPath_7);
         // test_full_api(23, inputPath_6); 
         // test_find3(24, inputPath_7);
-        // testOneBySign("com.android.server.audio.AudioService","void reloadAudioSettings()");
+        
+
+
+        // testOneBySign("com.android.server.NetworkManagementService","void setFirewallUidRule(int,int,int)");
+        // testOneBySign("com.android.server.AppOpsService","void resetAllModes(int,java.lang.String)");
+
+        long endTime = System.currentTimeMillis();
+        Log.info("[-] Time cost: " + (endTime - startTime) + "ms");
     }
 
 }

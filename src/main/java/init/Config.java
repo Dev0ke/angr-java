@@ -3,7 +3,7 @@ package init;
 public class Config {
 
     // Basic Config
-    public static int threads = 128;
+    public static int threads = 112;
     // public static boolean useExistJimple = true;
     public static String logLevel = "OFF";
     // Analysis Config
