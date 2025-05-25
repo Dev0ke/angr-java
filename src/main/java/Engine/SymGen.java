@@ -16,7 +16,7 @@ public class SymGen {
     // public Context ctx;
     private static final String STRING_TYPE = "java.lang.String";
     private static final String CHAR_SEQUENCE_TYPE = "java.lang.CharSequence";
-
+    private static final String STRING_BUILDER_TYPE = "java.lang.StringBuilder";
 
     public static SymBase makeArray(Context ctx, JNewArrayExpr newArrayExpr, String name){
         // Extract the base type of the array
@@ -89,8 +89,51 @@ public class SymGen {
 
 
 
-    public static SymBase makeSymbol(Context ctx, Type type, String name) {
+    public static SymBase maketoString(Context ctx, SymBase sym){
+        if(sym instanceof SymString symString){
+            return symString;
+        } else if(sym instanceof SymPrim prim){
+            Expr expr = prim.getExpr();
+            Type type = prim.getType();
+            if(expr instanceof BitVecNum bitVecNum){
+                if(type instanceof IntType){
+                   int value = bitVecNum.getInt();
+                   String str = String.valueOf(value);
+                   return new SymString(ctx.mkString(str), str);
+                } else if(type instanceof LongType){
+                    long value = bitVecNum.getLong();
+                    String str = String.valueOf(value);
+                    return new SymString(ctx.mkString(str), str);
+                } else if(type instanceof BooleanType){
+                    boolean value = bitVecNum.getInt() == 1;
+                    String str;
+                    if(value){
+                        str = "true";
+                    } else{
+                        str = "false";
+                    }
+                    return new SymString(ctx.mkString(str), str);
+                } else if(type instanceof CharType){
+                    char value = (char) bitVecNum.getInt();
+                    String str = String.valueOf(value);
+                    return new SymString(ctx.mkString(str), str);
+                } else if(type instanceof ShortType){
+                    short value = (short) bitVecNum.getInt();
+                    String str = String.valueOf(value);
+                    return new SymString(ctx.mkString(str), str);
+                } else if(type instanceof ByteType){
+                    byte value = (byte) bitVecNum.getInt();
+                    String str = String.valueOf(value);
+                    return new SymString(ctx.mkString(str), str);
+                } else{
+                    Log.error("Unsupported type in maketoString: " + type.toString());
+                }
+            }
+        }
+        return null;
+    }
 
+    public static SymBase makeSymbol(Context ctx, Type type, String name) {
         if (type instanceof BooleanType) {
             Expr expr = ctx.mkBoolConst(name);
             return new SymPrim(BooleanType.v(), expr, name);
@@ -109,10 +152,10 @@ public class SymGen {
         } else if (type instanceof RefType refType) {
             String refClassName = refType.getClassName();
             // Use String.equals for string comparison
-            if (STRING_TYPE.equals(refClassName) || CHAR_SEQUENCE_TYPE.equals(refClassName)) {
+            if (STRING_TYPE.equals(refClassName) || CHAR_SEQUENCE_TYPE.equals(refClassName) || STRING_BUILDER_TYPE.equals(refClassName)) {
                 SeqExpr<CharSort> stringExpr = ctx.mkString(name);
                 return new SymString(stringExpr, name);
-            }
+            } 
             
             Log.error("Unsupported RefType in makeSymbol: " + refClassName);
             return null;

@@ -21,7 +21,7 @@ public class SimState {
         public List<Expr> localConstraints;
 
         public int callDepth;
-        public Map<Unit, List<Integer>> instCount;
+        public Map<Integer, List<Integer>> instCount;
         public Map<String, SymBase> staticFieldMap;
         public HashSet<SootMethod> visitedMethods;
 
@@ -73,24 +73,31 @@ public class SimState {
         
         // TODO FIX HASH COLLISION
         public int addInstCount(Unit u, int branchIdx) {
-            // String unitKey = u.toString();
-            List<Integer> branchCountList =  this.instCount.get(u);
+            int unitKey = this.getUnitKey(u);
+            List<Integer> branchCountList =  this.instCount.get(unitKey);
             int count;
             if (branchCountList == null){
                 branchCountList = createBranchCount(u);
-                this.instCount.put(u, branchCountList);
+                this.instCount.put(unitKey, branchCountList);
             }
             count = branchCountList.get(branchIdx);
             branchCountList.set(branchIdx, count + 1);
             return count;
         }
 
+        public int getUnitKey(Unit u){
+            String className = this.curCFG.getBody().getMethod().getDeclaringClass().getName();
+            String methodName = this.curCFG.getBody().getMethod().getName();
+            String unitKey = className + methodName + u.toString();;
+            return unitKey.hashCode();
+        }
+
         public int getBranchCount(Unit u, int branchIdx){
-            // String unitKey = u.toString();
-            List<Integer> branchCountList =  this.instCount.get(u);
+            int unitKey = this.getUnitKey(u);
+            List<Integer> branchCountList =  this.instCount.get(unitKey);
             if (branchCountList == null){
                 branchCountList = createBranchCount(u);
-                this.instCount.put(u, branchCountList);
+                this.instCount.put(unitKey, branchCountList);
             }
             return branchCountList.get(branchIdx);
         }
@@ -313,7 +320,7 @@ public class SimState {
 
             // 深拷贝instCount - Map<Unit, List<Integer>>
             dest.instCount.clear();
-            for (Map.Entry<Unit, List<Integer>> entry : this.instCount.entrySet()) {
+            for (Map.Entry<Integer, List<Integer>> entry : this.instCount.entrySet()) {
                 List<Integer> copyList = new ArrayList<>(entry.getValue());
                 dest.instCount.put(entry.getKey(), copyList);
             }

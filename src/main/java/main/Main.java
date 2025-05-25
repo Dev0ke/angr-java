@@ -566,9 +566,8 @@ public class Main {
         
 
 
-        // testOneBySign("com.android.server.NetworkManagementService","void setFirewallUidRule(int,int,int)");
-        // testOneBySign("com.android.server.AppOpsService","void resetAllModes(int,java.lang.String)");
-
+        // testOneBySign("com.android.server.devicepolicy.DevicePolicyManagerService","boolean setPermittedAccessibilityServices(android.content.ComponentName,java.util.List)");
+        // testOneBySign("com.android.server.pm.UserManagerService","android.content.pm.UserInfo createProfileForUser(java.lang.String,int,int)");
         long endTime = System.currentTimeMillis();
         Log.info("[-] Time cost: " + (endTime - startTime) + "ms");
     }

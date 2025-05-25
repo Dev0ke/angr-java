@@ -81,6 +81,7 @@ public class PathAnalyze {
         return v;
     }
 
+
     public void updateValue(Value v, SymBase e, SimState state){
         if(v instanceof JimpleLocal)
             state.addLocalSym(v, e);
@@ -431,14 +432,21 @@ public class PathAnalyze {
                     v = handleCastExpr(this.z3Ctx,cast, state);
                 } else if (right instanceof JNewExpr newExpr) {
                     Type type = newExpr.getBaseType();
-                    if (type.toString().equals("java.lang.SecurityException")) {
+                    if (type.toString().equals("java.lang.SecurityException"))
+                    {
                         Log.info("SecurityException branch. Terminate.");
                         Unit handler = getExceptionHandler(curUnit, state, (RefType)type);
                         if(handler != null){
                             doOne(handler, state, false);
                         }
                         return;
-                    } else {
+                    } 
+                    else if(type.toString().equals("java.lang.StringBuilder"))
+                    {
+                        v = SymGen.makeSymbol(z3Ctx, type, "String_" + left.toString());
+                    }
+                    else 
+                    {
                         Log.error("Unsupported right type: " + right.getClass());
                     }
                 } else if(right instanceof JNewArrayExpr newArrayExpr){
@@ -745,7 +753,6 @@ public class PathAnalyze {
             /*                      Next Unit                       */
             /*   ------------------------------------------------   */                
 
-
             List<Unit> nextUnits = cfg.getUnexceptionalSuccsOf(curUnit);
             for (Unit u : nextUnits) {
                 doOne(u, state, false);
@@ -755,6 +762,7 @@ public class PathAnalyze {
         }
         return;
     }
+
 
 
     public void handleInvoke(Unit curUnit, SimState state) {
@@ -781,10 +789,80 @@ public class PathAnalyze {
         SootMethod callee = expr.getMethod();
         String methodName = callee.getName();
         String className = callee.getDeclaringClass().getName();
-        boolean isEnforcePermission = EnforcePermissionAPI.isEnforcePermissionAPI(className, methodName);
 
+
+        if(className.equals("java.lang.StringBuilder")){
+            if(expr instanceof VirtualInvokeExpr virtualInvokeExpr){
+                Value instance = virtualInvokeExpr.getBase();
+
+                state.popLocalMap();
+                SymBase instanceSym = valueToSym(instance, state);
+                state.pushLocalMap();
+
+                List<SymBase> params = state.getLastParam();
+                SymBase result = null;
+                if(instanceSym instanceof SymString symString){
+                    Log.warn("[+] Handle StringBuilder: " + className + "." + methodName);
+                    if(methodName.equals("append")){
+                        SymBase param =  params.get(0);
+                        if(param instanceof SymString str0){
+                            result = symString.concat(this.z3Ctx, str0);
+                        } else if(param instanceof SymPrim prim0){
+                            result = symString.concat(this.z3Ctx, prim0);
+                        }
+                    } else if(methodName.equals("toString")){
+                        result = symString;
+                    } 
+                } 
+
+                Unit ret = postInvoke(state);
+                if (ret instanceof AssignStmt assign) {
+                    Value left = assign.getLeftOp();
+                    updateValue(left, (SymBase)result, state);
+                } else {
+                    Log.error("Unsupported Ret Unit type:  " + ret.getClass());
+                }
+                
+                doOne(ret, state, true);
+                return;
+
+            }
+           
+        } else if(methodName.equals("toString")){
+            List<SymBase> params = state.getLastParam();
+            SymBase result = null;
+            int paramSize = params.size();
+            if(paramSize == 0){
+                result = new SymString(this.z3Ctx, expr.toString());
+            } else{
+                SymBase param =  params.get(0);
+                if(param instanceof SymString str0){
+                    result = str0;
+                } else if(param instanceof SymPrim prim0){
+                    result = SymGen.maketoString(this.z3Ctx, prim0);
+                } else{
+                    Log.error("[toString] Unsupported param type: " + param.getClass());
+                }
+            }
+            Unit ret = postInvoke(state);
+            if (ret instanceof AssignStmt assign) {
+                Value left = assign.getLeftOp();
+                updateValue(left, (SymBase)result, state);
+            } else {
+                Log.error("[toString] Unsupported Ret Unit type:  " + ret.getClass());
+            }
+            
+            
+            doOne(ret, state, true);
+            return;
+        }
+
+
+
+        boolean isEnforcePermission = EnforcePermissionAPI.isEnforcePermissionAPI(className, methodName);
+        boolean isCheckPermission = CheckPermissionAPI.isCheckPermissionAPI(className, methodName);
         //hook
-        if (isEnforcePermission || CheckPermissionAPI.isCheckPermissionAPI(className, methodName)) {
+        if (isEnforcePermission || isCheckPermission) {
             Log.warn("[+] Handle Permission API: " + className + "." + methodName);
             SymBase e = HookSymbol.handlePermissionAPI(this.z3Ctx, expr, state);
             if (e != null) {

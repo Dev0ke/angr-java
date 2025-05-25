@@ -29,6 +29,12 @@ public class SymString extends SymBase {
         this.type = RefType.v("java.lang.String");
     }
 
+    public SymString(Context ctx,String str){
+        this.expr = ctx.mkString(str);
+        this.isNull = false;
+        this.type = RefType.v("java.lang.String");
+    }
+
     public SymString(SeqExpr<CharSort> value){
         this.expr = value;
         this.isNull = false;
@@ -73,6 +79,22 @@ public class SymString extends SymBase {
         return new SymString(ctx.mkConcat(expr, other.expr));
     }
 
+    public SymBase concat(Context ctx, SymPrim other){
+        // BitVecExpr to SeqExpr<CharSort>
+        Expr otherExpr = other.getExpr();
+        if(otherExpr instanceof BitVecNum num){
+            String str = num.toString();
+            SeqExpr<CharSort> otherSeq = ctx.mkString(str);
+            return new SymString(ctx.mkConcat(expr, otherSeq));
+        } else if(otherExpr instanceof BitVecExpr bv){
+            SeqExpr<CharSort> otherSeq = ctx.mkString(bv.toString());
+            return new SymString(ctx.mkConcat(expr, otherSeq));
+        } else{
+            Log.error("Unsupported SymPrim type: " + otherExpr.getClass());
+            return null;
+        }
+    }
+
     // Returns true if this string contains the specified sequence
     public SymBase contains(Context ctx, SymString other) {
         BoolExpr result = ctx.mkContains(expr, other.expr);
@@ -111,6 +133,8 @@ public class SymString extends SymBase {
             return new SymPrim(soot.BooleanType.v());
         }
     }
+
+
 
     // Returns the index of the first occurrence of the specified substring
     public SymBase indexOf(Context ctx, SymString str) {
