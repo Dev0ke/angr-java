@@ -834,9 +834,11 @@ public class PathAnalyze {
             int paramSize = params.size();
             if(paramSize == 0){
                 result = new SymString(this.z3Ctx, expr.toString());
-            } else{
+            } else {
                 SymBase param =  params.get(0);
-                if(param instanceof SymString str0){
+                if(param == null){
+                    Log.error("[toString] Unsupported param type: ");
+                } else if(param instanceof SymString str0){
                     result = str0;
                 } else if(param instanceof SymPrim prim0){
                     result = SymGen.maketoString(this.z3Ctx, prim0);

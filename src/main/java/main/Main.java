@@ -564,10 +564,8 @@ public class Main {
         // test_full_api(23, inputPath_6); 
         // test_find3(24, inputPath_7);
         
-
-
         // testOneBySign("com.android.server.devicepolicy.DevicePolicyManagerService","boolean setPermittedAccessibilityServices(android.content.ComponentName,java.util.List)");
-        // testOneBySign("com.android.server.pm.UserManagerService","android.content.pm.UserInfo createProfileForUser(java.lang.String,int,int)");
+        // testOneBySign("com.android.internal.telephony.UiccSmsController","boolean copyMessageToIccEfForSubscriber(int,java.lang.String,int,byte[],byte[])");
         long endTime = System.currentTimeMillis();
         Log.info("[-] Time cost: " + (endTime - startTime) + "ms");
     }
