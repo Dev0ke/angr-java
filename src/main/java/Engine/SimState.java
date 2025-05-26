@@ -10,7 +10,7 @@ import java.util.*;
 import soot.*;
 import soot.toolkits.graph.ExceptionalUnitGraph;
 import utils.Log;
-import Engine.SymBase;
+
 
 public class SimState {
         public List<SymBase> symbol;
@@ -19,11 +19,12 @@ public class SimState {
         public ExceptionalUnitGraph curCFG;
         public List<Expr> globalConstraints;
         public List<Expr> localConstraints;
+        public boolean isClear = false;
 
         public int callDepth;
         public Map<Integer, List<Integer>> instCount;
         public Map<String, SymBase> staticFieldMap;
-        public HashSet<SootMethod> visitedMethods;
+        public HashMap<Integer, Integer> visitedMethods;
 
         // stack
         public List<List<SymBase>> paramList;
@@ -44,7 +45,7 @@ public class SimState {
             this.instCount = new HashMap<>();
             this.staticFieldMap = new HashMap<>();
 
-            this.visitedMethods = new HashSet<>();
+            this.visitedMethods = new HashMap<>();
             this.objectMap = new HashMap<>();
             this.curCFG = null;
             this.callDepth = 0;
@@ -58,6 +59,29 @@ public class SimState {
         }
 
 
+        public void addVisitedMethod(SootMethod method) {
+            int methodHash = genMethodHash(method);
+            if(this.visitedMethods.containsKey(methodHash)){
+                this.visitedMethods.put(methodHash, this.visitedMethods.get(methodHash) + 1);
+            }else{
+                this.visitedMethods.put(methodHash, 1);
+            }
+        }
+
+        public int getVisitedMethodCount(SootMethod method) {
+            int methodHash = genMethodHash(method);
+            return this.visitedMethods.getOrDefault(methodHash, 0);
+        }
+
+        public int genMethodHash(SootMethod method) {
+            String className = method.getDeclaringClass().getName();
+            String methodName = method.getName();
+            String methodSignature = method.getSignature();
+            return (className + methodName + methodSignature).hashCode();
+        }
+        
+
+
         public void addObject(Value v, SymBase e) {
             this.objectMap.put(v, e);
         }
@@ -69,10 +93,18 @@ public class SimState {
         public void removeObject(SymBase v) {
             this.objectMap.remove(v);
         }
+
+        public void setClear(boolean isClear) {
+            this.isClear = isClear;
+        }
+
+        public boolean isClear() {
+            return this.isClear;
+        }
         
         
         // TODO FIX HASH COLLISION
-        public int addInstCount(Unit u, int branchIdx) {
+        public int addBranchCount(Unit u, int branchIdx) {
             int unitKey = this.getUnitKey(u);
             List<Integer> branchCountList =  this.instCount.get(unitKey);
             int count;
@@ -293,6 +325,7 @@ public class SimState {
         public void copyTo(SimState dest) {
             // 保持CFG的浅拷贝（通常是共享的）
             dest.curCFG = this.curCFG;    
+            dest.isClear = this.isClear;
             
             // 深拷贝curLocalMap
             dest.curLocalMap.clear();
@@ -365,7 +398,9 @@ public class SimState {
             
             // 深拷贝visitedMethods
             dest.visitedMethods.clear();
-            dest.visitedMethods.addAll(this.visitedMethods);
+            for (Map.Entry<Integer, Integer> entry : this.visitedMethods.entrySet()) {
+                dest.visitedMethods.put(entry.getKey(), entry.getValue());
+            }
             
             // callDepth是基本类型，直接赋值
             dest.callDepth = this.callDepth;

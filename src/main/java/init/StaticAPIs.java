@@ -21,10 +21,6 @@ public class StaticAPIs {
     );
 
 
-    public static final Set<String> ANALYZE_CLASS_SET = Set.of(
-    "android.os.UserHandle"
-    );
-
 
     public static boolean shouldAnalyze(String className){
        for (String excludeAPI : EXCLUDE_API_FOR_ANALYSIS) {

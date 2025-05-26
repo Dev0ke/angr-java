@@ -3,17 +3,20 @@ package init;
 public class Config {
 
     // Basic Config
-    public static int threads = 112;
+    public static int threads = 120;
     // public static boolean useExistJimple = true;
     public static String logLevel = "OFF";
     // Analysis Config
     public static boolean enableLazySolve = false;
     public static boolean enableInterAnalysis = true;
-    public static boolean enableParamSymbolize = false;
+    public static boolean enableParamSymbolize = true;
+
     public static int LoopLimit = 1;
+    public static int ACLoopLimit = 4;
     public static int branchLimit = 256;
     public static int depthLimit = 1000;
-    public static int timeout = 60*60;
+    public static int visitedMethodLimit = 2;
+    public static int taskTimeout = 6*60; // 单个任务超时时间，默认30分钟
 
     // Path Config
     public static String outputJimplePath = "/home/devoke/decheck/decheck_data/output/jimple";

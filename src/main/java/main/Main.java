@@ -57,7 +57,7 @@ public class Main {
         ThreadPoolExecutor executor = new ThreadPoolExecutor(
                 processors, // 核心线程数
                 processors * 2, // 最大线程数
-                60L, TimeUnit.SECONDS, // 空闲线程存活时间
+                30L, TimeUnit.SECONDS, // 空闲线程存活时间
                 new LinkedBlockingQueue<>(1000), // 使用有界队列
                 new ThreadPoolExecutor.CallerRunsPolicy() // 队列满时的处理策略
         );
@@ -118,7 +118,15 @@ public class Main {
                         SootMethod m = preloadedMethods.get(key);
                         
                         if (m != null) {
+                            // 设置任务超时时间
+                            long taskStartTime = System.currentTimeMillis();
                             processMethod(m, className, methodSign, resultExporter);
+                            long taskEndTime = System.currentTimeMillis();
+                            
+                            // 检查任务是否超时
+                            if (taskEndTime - taskStartTime > Config.taskTimeout * 1000) {
+                                throw new TimeoutException("Task execution time exceeded " + Config.taskTimeout + " seconds");
+                            }
                         } else {
                             Log.warn("Skipping unpreloaded method: " + className + "." + methodSign);
                             handleError(className, methodSign, resultExporter, 
@@ -135,14 +143,7 @@ public class Main {
             }
         }
 
-        // 8. 等待所有任务完成
-        for (Future<?> future : futures) {
-            try {
-                future.get(Config.timeout, TimeUnit.SECONDS);
-            } catch (Exception e) {
-                Log.error("Task completion error: " + e.getMessage());
-            }
-        }
+
 
         executor.shutdown();
         try {
@@ -154,17 +155,16 @@ public class Main {
     }
 
     public static void test_arc_api(String arcade_api_path,int APIversion,String inputPath) {
-  
+
         // 1. 预先加载API列表
         HashMap<String, List<String>> apiList = readAPIfromFile(arcade_api_path);
-
 
         // 3. 优化线程池配置
         int processors = Runtime.getRuntime().availableProcessors();
         ThreadPoolExecutor executor = new ThreadPoolExecutor(
                 processors, // 核心线程数
                 processors * 2, // 最大线程数
-                60L, TimeUnit.SECONDS, // 空闲线程存活时间
+                30L, TimeUnit.SECONDS, // 空闲线程存活时间
                 new LinkedBlockingQueue<>(1000), // 使用有界队列
                 new ThreadPoolExecutor.CallerRunsPolicy() // 队列满时的处理策略
         );
@@ -199,7 +199,15 @@ public class Main {
                         SootMethod m = preloadedMethods.get(key);
                         
                         if (m != null) {
+                            // 设置任务超时时间
+                            long taskStartTime = System.currentTimeMillis();
                             processMethod(m, className, methodSign, resultExporter);
+                            long taskEndTime = System.currentTimeMillis();
+                            
+                            // 检查任务是否超时
+                            if (taskEndTime - taskStartTime > Config.taskTimeout * 1000) {
+                                throw new TimeoutException("Task execution time exceeded " + Config.taskTimeout + " seconds");
+                            }
                         } else {
                             Log.warn("Skipping unpreloaded method: " + className + "." + methodSign);
                             handleError(className, methodSign, resultExporter, 
@@ -216,14 +224,6 @@ public class Main {
             }
         }
 
-        // 8. 等待所有任务完成
-        for (Future<?> future : futures) {
-            try {
-                future.get(Config.timeout, TimeUnit.SECONDS);
-            } catch (Exception e) {
-                Log.error("Task completion error: " + e.getMessage());
-            }
-        }
 
         executor.shutdown();
         try {
@@ -253,12 +253,6 @@ public class Main {
         }
     }
 
-    /**
-     * 预加载所有SootMethod对象，避免工作线程并发访问Soot核心解析功能
-     * @param apiList API列表，支持HashSet<String>和List<String>两种类型
-     * @param sootEnv SootEnv对象
-     * @return 预加载的方法映射，键为"className#methodSignature"，值为SootMethod对象
-     */
     private static Map<String, SootMethod> preloadSootMethods(Map<String, ? extends Collection<String>> apiList, SootEnv sootEnv) {
         Map<String, SootMethod> preloadedMethods = new HashMap<>();
         int totalMethods = 0;
@@ -374,15 +368,12 @@ public class Main {
     
     }
 
-
     public static void test_oppo() {
-
-        // 3. 优化线程池配置
         int processors = Runtime.getRuntime().availableProcessors();
         ThreadPoolExecutor executor = new ThreadPoolExecutor(
                 processors, // 核心线程数
                 processors * 2, // 最大线程数
-                60L, TimeUnit.SECONDS, // 空闲线程存活时间
+                30L, TimeUnit.SECONDS, // 空闲线程存活时间
                 new LinkedBlockingQueue<>(1000), // 使用有界队列
                 new ThreadPoolExecutor.CallerRunsPolicy() // 队列满时的处理策略
         );
@@ -390,10 +381,9 @@ public class Main {
         // 4. 初始化环境
         String firmPath = "/public/CustomRoms/OPPO_RMX3888_C15_610/fs";
         // String firmPath = "/public/CustomRoms/xiaomi_yuechu";
-        int APIV= 33;
+        int APIV = 33;
         String androidJarPath = JimpleConverter.getAndroidJarpath(APIV);
         List<String> allFiles = FirmwareUtils.findAllFiles(firmPath);
-
         FirmwareUtils.removeErrorFile(allFiles);
         Log.info("FILES : " + allFiles.size());
         
@@ -417,7 +407,6 @@ public class Main {
 
             // 6. 批量提交任务
             for (String methodSign : methodList) {
-
                 Future<?> future = executor.submit(() -> {
                     try {
                         String key = className + "#" + methodSign;
@@ -440,16 +429,6 @@ public class Main {
 
             }
         }
-
-        // 8. 等待所有任务完成
-        for (Future<?> future : futures) {
-            try {
-                future.get(Config.timeout, TimeUnit.HOURS);
-            } catch (Exception e) {
-                Log.error("Task completion error: " + e.getMessage());
-            }
-        }
-
         executor.shutdown();
         try {
             executor.awaitTermination(5, TimeUnit.MINUTES);
@@ -566,6 +545,11 @@ public class Main {
         
         // testOneBySign("com.android.server.devicepolicy.DevicePolicyManagerService","boolean setPermittedAccessibilityServices(android.content.ComponentName,java.util.List)");
         // testOneBySign("com.android.internal.telephony.UiccSmsController","boolean copyMessageToIccEfForSubscriber(int,java.lang.String,int,byte[],byte[])");
+        // testOneBySign("com.android.server.pm.PackageManagerService","void resetRuntimePermissions()");
+        // testOneBySign("com.android.server.notification.NotificationManagerService$5","java.util.List getZenRules()");
+        // testOneBySign("com.android.server.PersistentDataBlockService$1","boolean getOemUnlockEnabled()");
+
+        // testOneBySign("com.android.server.devicepolicy.DevicePolicyManagerService","int getPasswordMinimumLowerCase(android.content.ComponentName,int,boolean)");
         long endTime = System.currentTimeMillis();
         Log.info("[-] Time cost: " + (endTime - startTime) + "ms");
     }

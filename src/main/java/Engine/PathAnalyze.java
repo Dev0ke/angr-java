@@ -56,7 +56,7 @@ public class PathAnalyze {
         List<SymBase> entryParams = new ArrayList<>();
         for(int i = 0; i < paramTypes.size(); i++){
             Type paramType = paramTypes.get(i);
-            String name = String.format("<INPUT>%s_x%d",paramType.toString(),i);
+            String name = String.format("API_INPUT%d_%s",i,paramType.toString());
             SymBase paramExpr = SymGen.makeSymbol(this.z3Ctx,paramType,name);
             entryParams.add(paramExpr);
         }
@@ -337,9 +337,13 @@ public class PathAnalyze {
                     } else{
                         state_true.addLocalConstraint(resultExpr);
                     }
-                    if ((state_true.addInstCount(curUnit,0) <= Config.LoopLimit ||  isAccessControl ) ){
-                        if(enableLazySolve || solveConstraintsSingleWithCache(state_true.getFullConstraints()))
+                    if ((state_true.getBranchCount(curUnit,0) <= Config.LoopLimit 
+                         ||  (isAccessControl && state_true.getBranchCount(curUnit,0) <= Config.ACLoopLimit) ) ){
+                        if(enableLazySolve || solveConstraintsSingleWithCache(state_true.getFullConstraints())){
+                            state_true.addBranchCount(curUnit,0);
                             doOne(branch_true, state_true, false);
+                        }
+                            
                         else{
                             Log.info("unsat branch");
                         }
@@ -354,9 +358,12 @@ public class PathAnalyze {
                     } else{
                         state_false.addLocalConstraint(this.z3Ctx.mkNot(resultExpr));
                     }
-                    if ((state_false.addInstCount(curUnit,1) <= Config.LoopLimit ||  isAccessControl ) ) {
-                        if(enableLazySolve || solveConstraintsSingleWithCache(state_false.getFullConstraints()))
+                    if ((state_false.getBranchCount(curUnit,1) <= Config.LoopLimit 
+                         ||  (isAccessControl && state_false.getBranchCount(curUnit,1) <= Config.ACLoopLimit) ) ){
+                        if(enableLazySolve || solveConstraintsSingleWithCache(state_false.getFullConstraints())){
+                            state_false.addBranchCount(curUnit,1);
                             doOne(branch_false, state_false,  false);
+                        }
                         else
                             Log.info("unsat branch");
                     } else {
@@ -394,14 +401,16 @@ public class PathAnalyze {
                     //     return;
                     // }
 
-                    if (state_true.addInstCount(curUnit,0) <= Config.LoopLimit) {
+                    if (state_true.getBranchCount(curUnit,0) <= Config.LoopLimit) {
                         // TODO Add constraint 
                         Log.info("|- IfStmt 1, condition TRUE: " + condition);
+                        state_true.addBranchCount(curUnit,0);
                         doOne(branch_true, state_true,  false);
                     }
-                    if (state_false.addInstCount(curUnit,1) <= Config.LoopLimit) {
+                    if (state_false.getBranchCount(curUnit,1) <= Config.LoopLimit) {
                         // TODO Add constraint 
                         Log.info("|- IfStmt 2, condition FALSE: !" + condition);
+                        state_false.addBranchCount(curUnit,1);
                         doOne(branch_false, state_false, false);
                     }
                     return;
@@ -584,11 +593,14 @@ public class PathAnalyze {
                         } else{
                             branchState.addLocalConstraint(z3Ctx.mkEq(sym.getExpr(), v));
                         }
-                        if ( (branchState.addInstCount(switchStmt, caseIdx) <= Config.LoopLimit || isAccessControl) 
+                        if ( (branchState.getBranchCount(switchStmt, caseIdx) <= Config.LoopLimit 
+                                || (isAccessControl && branchState.getBranchCount(switchStmt, caseIdx) <= Config.ACLoopLimit)) 
                                 && (enableLazySolve || solveConstraintsSingleWithCache(branchState.getFullConstraints()))  ) {
+                            branchState.addBranchCount(switchStmt, caseIdx);
                             doOne(target, branchState, false);
                         }
-                    } else if(branchState.addInstCount(switchStmt, caseIdx) <= Config.LoopLimit){
+                    } else if(branchState.getBranchCount(switchStmt, caseIdx) <= Config.LoopLimit){
+                        branchState.addBranchCount(switchStmt, caseIdx);
                         doOne(target, branchState,false);
                     }
                 }
@@ -605,12 +617,16 @@ public class PathAnalyze {
                         branchState.addLocalConstraint(z3Ctx.mkNot(z3Ctx.mkOr(caseValues.stream()
                                 .map(ii -> z3Ctx.mkEq(sym.getExpr(), z3Ctx.mkBV(ii.value, 32))).toArray(Expr[]::new))));
                     }
-                    if ( (branchState.addInstCount(switchStmt, 0) <= Config.LoopLimit || isAccessControl) 
-                                && (enableLazySolve || solveConstraintsSingleWithCache(branchState.getFullConstraints()))  ) {
+                    if ( (branchState.getBranchCount(switchStmt, 0) <= Config.LoopLimit 
+                            || (isAccessControl && branchState.getBranchCount(switchStmt, 0) <= Config.ACLoopLimit)) 
+                            && (enableLazySolve || solveConstraintsSingleWithCache(branchState.getFullConstraints()))  ) {
+                        branchState.addBranchCount(switchStmt, 0);
                         doOne(defaultTarget, branchState,false);
                     }
-                } else
+                } else if(branchState.getBranchCount(switchStmt, 0) <= Config.LoopLimit){
+                    branchState.addBranchCount(switchStmt, 0);
                     doOne(defaultTarget, branchState,  false);
+                }
                 return;
 
             }
@@ -637,11 +653,14 @@ public class PathAnalyze {
                         } else{
                             branchState.addLocalConstraint(z3Ctx.mkEq(sym.getExpr(), v));
                         }
-                        if ( (branchState.addInstCount(tableSwitchStmt, caseIdx) <= Config.LoopLimit || isAccessControl)
-                                            && (enableLazySolve || solveConstraintsSingleWithCache(branchState.getFullConstraints()))  ) {
+                        if ( (branchState.getBranchCount(tableSwitchStmt, caseIdx) <= Config.LoopLimit 
+                                || (isAccessControl && branchState.getBranchCount(tableSwitchStmt, caseIdx) <= Config.ACLoopLimit)) 
+                                && (enableLazySolve || solveConstraintsSingleWithCache(branchState.getFullConstraints()))  ) {
+                            branchState.addBranchCount(tableSwitchStmt, caseIdx);
                             doOne(target, branchState, false);
                         }
-                    } else if(branchState.addInstCount(tableSwitchStmt, 0) <= Config.LoopLimit){
+                    } else if(branchState.getBranchCount(tableSwitchStmt, caseIdx) <= Config.LoopLimit){
+                        branchState.addBranchCount(tableSwitchStmt, caseIdx);   
                         doOne(target, branchState,false);
                     }
                 }
@@ -658,11 +677,14 @@ public class PathAnalyze {
                         branchState.addLocalConstraint(z3Ctx.mkNot(z3Ctx.mkOr(caseValues.stream()
                                 .map(ii -> z3Ctx.mkEq(sym.getExpr(), z3Ctx.mkBV(ii.value, 32))).toArray(Expr[]::new))));
                     }
-                    if ( (branchState.addInstCount(tableSwitchStmt, 0) <= Config.LoopLimit || isAccessControl)
-                                           && (enableLazySolve || solveConstraintsSingleWithCache(branchState.getFullConstraints()))  ) {
+                    if ( (branchState.getBranchCount(tableSwitchStmt, 0) <= Config.LoopLimit 
+                            || (isAccessControl && branchState.getBranchCount(tableSwitchStmt, 0) <= Config.ACLoopLimit)) 
+                            && (enableLazySolve || solveConstraintsSingleWithCache(branchState.getFullConstraints()))  ) {
+                        branchState.addBranchCount(tableSwitchStmt, 0);
                         doOne(defaultTarget, branchState,false);
                     }
-                } else if(branchState.addInstCount(tableSwitchStmt, 0) <= Config.LoopLimit){
+                } else if(branchState.getBranchCount(tableSwitchStmt, 0) <= Config.LoopLimit){
+                    branchState.addBranchCount(tableSwitchStmt, 0);
                     doOne(defaultTarget, branchState,  false);
                 }
                 return;
@@ -860,90 +882,107 @@ public class PathAnalyze {
         }
 
 
+        if(!state.isClear()){ // 
+            boolean isEnforcePermission = EnforcePermissionAPI.isEnforcePermissionAPI(className, methodName);
+            boolean isCheckPermission = CheckPermissionAPI.isCheckPermissionAPI(className, methodName);
+            //hook
+            if (isEnforcePermission || isCheckPermission) {
+                Log.warn("[+] Handle Permission API: " + className + "." + methodName);
+                SymBase e = HookSymbol.handlePermissionAPI(this.z3Ctx, expr, state);
+                if (e != null) {
+                    //spceial case for enforce
+                    //throw SecurityException
+                    if(isEnforcePermission){
+                        SimState throwState = state.copy();
+                        Unit exceptionHandler = getExceptionHandler(curUnit, throwState, Scene.v().getRefType("java.lang.SecurityException"));
+                        if(exceptionHandler != null ){ 
+                            throwState.popGlobalConstraint();
+                            SymBase permissionExpr = e;
+                            Expr permissionValue = this.z3Ctx.mkNot(this.z3Ctx.mkEq(permissionExpr.getExpr(), z3Ctx.mkBV(EnforcePermissionAPI.PERMISSION_GRANTED, 32)));
+                            throwState.addGlobalConstraint(permissionValue);
+                            doOne(exceptionHandler, throwState, false);
+                            // return;
+                        } 
+                    }
 
-        boolean isEnforcePermission = EnforcePermissionAPI.isEnforcePermissionAPI(className, methodName);
-        boolean isCheckPermission = CheckPermissionAPI.isCheckPermissionAPI(className, methodName);
-        //hook
-        if (isEnforcePermission || isCheckPermission) {
-            Log.warn("[+] Handle Permission API: " + className + "." + methodName);
-            SymBase e = HookSymbol.handlePermissionAPI(this.z3Ctx, expr, state);
-            if (e != null) {
-                //spceial case for enforce
-                //throw SecurityException
-                if(isEnforcePermission){
-                    SimState throwState = state.copy();
-                    Unit exceptionHandler = getExceptionHandler(curUnit, throwState, Scene.v().getRefType("java.lang.SecurityException"));
-                    if(exceptionHandler != null ){ 
-                        throwState.popGlobalConstraint();
-                        SymBase permissionExpr = e;
-                        Expr permissionValue = this.z3Ctx.mkNot(this.z3Ctx.mkEq(permissionExpr.getExpr(), z3Ctx.mkBV(EnforcePermissionAPI.PERMISSION_GRANTED, 32)));
-                        throwState.addGlobalConstraint(permissionValue);
-                        doOne(exceptionHandler, throwState, false);
-                        // return;
-                    } 
+                    Unit ret = postInvoke(state);
+                    if (ret instanceof JAssignStmt assign) {
+                        Value left = assign.getLeftOp();
+                        updateValue(left, e, state);
+                    } else if(ret instanceof JInvokeStmt invokeStmt){
+                        // VOID invoke
+                    } else {
+                        Log.error("Unsupported Ret Unit type: " + ret.getClass());
+                    }
+                    doOne(ret, state, true);
+                    return;
                 }
-
-                Unit ret = postInvoke(state);
-                if (ret instanceof JAssignStmt assign) {
-                    Value left = assign.getLeftOp();
-                    updateValue(left, e, state);
-                } else if(ret instanceof JInvokeStmt invokeStmt){
-                    // VOID invoke
-                } else {
-                    Log.error("Unsupported Ret Unit type: " + ret.getClass());
+            
+            } else if (CheckUidAPI.allClassNames.contains(className) && methodName.equals("getCallingUid")) {
+                Log.warn("[+] Find UID API: " + className + "." + methodName);
+                SymBase e = HookSymbol.handleUidAPI(this.z3Ctx, expr, state);
+                if (e != null) {
+                    Unit ret = postInvoke(state);
+                    if (ret instanceof AssignStmt assign) {
+                        Value left = assign.getLeftOp();
+                        updateValue(left, e, state);
+                    } else {
+                        Log.error("Unsupported Ret Unit type:  " + ret.getClass());
+                    }
+                    doOne(ret, state, true);
+                    return;
                 }
-                doOne(ret, state, true);
-                return;
-            }
-        
-        } else if (CheckUidAPI.allClassNames.contains(className) && methodName.equals("getCallingUid")) {
-            Log.warn("[+] Find UID API: " + className + "." + methodName);
-            SymBase e = HookSymbol.handleUidAPI(this.z3Ctx, expr, state);
-            if (e != null) {
-                Unit ret = postInvoke(state);
-                if (ret instanceof AssignStmt assign) {
-                    Value left = assign.getLeftOp();
-                    updateValue(left, e, state);
-                } else {
-                    Log.error("Unsupported Ret Unit type:  " + ret.getClass());
+            } else if (CheckPidAPI.allClassNames.contains(className) && methodName.equals("getCallingPid")) {
+                Log.warn("[+] Find PID API: " + className + "." + methodName);
+                SymBase e = HookSymbol.handlePidAPI(this.z3Ctx, expr, state);
+                if (e != null) {
+                    Unit ret = postInvoke(state);
+                    if (ret instanceof AssignStmt assign) {
+                        Value left = assign.getLeftOp();
+                        updateValue(left, e, state);
+                    } else {
+                        Log.error("Unsupported Ret Unit type: " + ret.getClass());
+                    }
+                    doOne(ret, state, true);
+                    return;
                 }
-                doOne(ret, state, true);
-                return;
-            }
-        } else if (CheckPidAPI.allClassNames.contains(className) && methodName.equals("getCallingPid")) {
-            Log.warn("[+] Find PID API: " + className + "." + methodName);
-            SymBase e = HookSymbol.handlePidAPI(this.z3Ctx, expr, state);
-            if (e != null) {
-                Unit ret = postInvoke(state);
-                if (ret instanceof AssignStmt assign) {
-                    Value left = assign.getLeftOp();
-                    updateValue(left, e, state);
-                } else {
-                    Log.error("Unsupported Ret Unit type: " + ret.getClass());
+            } else if (CheckAppOpAPI.getAllClassName().contains(className)) {
+                Log.warn("[+] Find AppOp API: " + className + "." + methodName);
+                SymBase e = HookSymbol.handleAppOpAPI(this.z3Ctx, expr, state);
+                if (e != null) {
+                    Unit ret = postInvoke(state);
+                    if (ret instanceof AssignStmt assign) {
+                        Value left = assign.getLeftOp();
+                        updateValue(left, e, state);
+                    } else {
+                        Log.error("Unsupported Ret Unit type:  " + ret.getClass());
+                    }
+                    doOne(ret, state, true);
+                    return ;
                 }
-                doOne(ret, state, true);
-                return;
-            }
-        } else if (CheckAppOpAPI.getAllClassName().contains(className)) {
-            Log.warn("[+] Find AppOp API: " + className + "." + methodName);
-            SymBase e = HookSymbol.handleAppOpAPI(this.z3Ctx, expr, state);
-            if (e != null) {
-                Unit ret = postInvoke(state);
-                if (ret instanceof AssignStmt assign) {
-                    Value left = assign.getLeftOp();
-                    updateValue(left, e, state);
-                } else {
-                    Log.error("Unsupported Ret Unit type:  " + ret.getClass());
-                }
-                doOne(ret, state, true);
-                return ;
             }
         }
 
-        else if (className.equals("java.lang.Exception")) {
+        if (className.equals("java.lang.Exception")) {
             Log.warn("Exception invoke. Terminate.");
             return;
-        } else if (className.equals("android.os.Process") && methodName.equals("myPid")) {
+        } 
+        else if (methodName.equals("clearCallingIdentity")) {
+            Log.warn("clearCallingIdentity invoke.");
+            state.setClear(true);
+            Unit ret = postInvoke(state);
+            doOne(ret, state, true);
+            return;
+        } else if(methodName.equals("restoreCallingIdentity")){
+            Log.warn("restoreCallingIdentity invoke.");
+            state.setClear(false);
+            Unit ret = postInvoke(state);
+            doOne(ret, state, true);
+            return;
+        }
+
+        
+        else if (className.equals("android.os.Process") && methodName.equals("myPid")) {
             SymBase e = HookSymbol.handleMyPidAPI(this.z3Ctx, expr, state);
             if (e != null) {
                 Unit ret = postInvoke(state);
@@ -985,8 +1024,11 @@ public class PathAnalyze {
             }
         }
 
-        if( (isAccessControl || ( (enableInterAnalysis && this.CheckMethods.contains(callee) ) )) && hasActiveBody ) {
-            state.visitedMethods.add(callee);
+        if( (isAccessControl || ( (enableInterAnalysis && this.CheckMethods.contains(callee) && !state.isClear()) )) 
+            && hasActiveBody
+            && (state.getVisitedMethodCount(callee) < Config.visitedMethodLimit  && !AccessControlUtils.isAccessControlAPI(className, methodName)) 
+        ) {
+            state.addVisitedMethod(callee);
             analyzeMethod(callee, state);
             return;
         } else { // DO NOTHING
@@ -1055,12 +1097,7 @@ public class PathAnalyze {
         return state.popCall();
     }
 
-    /**
-     * 生成约束集合的缓存键
-     * 通过将约束转换为字符串并排序来确保相同约束集合有相同的缓存键
-     * @param constraints 约束列表
-     * @return 缓存键字符串
-     */
+
     private String generateConstraintCacheKey(List<Expr> constraints) {
         if (constraints == null || constraints.isEmpty()) {
             return "EMPTY_CONSTRAINTS";
@@ -1077,12 +1114,6 @@ public class PathAnalyze {
         return String.valueOf(constraintStrings.hashCode());
     }
 
-    /**
-     * 带缓存的约束可满足性检查
-     * 如果相同的约束已经求解过，直接返回缓存的结果
-     * @param constraints 约束列表
-     * @return 约束是否可满足
-     */
     private boolean solveConstraintsSingleWithCache(List<Expr> constraints) {
         // 生成缓存键
         String cacheKey = generateConstraintCacheKey(constraints);

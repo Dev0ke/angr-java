@@ -23,10 +23,26 @@ public class CheckFinder {
         return CheckMethods;
     }
 
+    public boolean isClearCallingIdentity(SootMethod method) {
+        if(method.getName().equals("clearCallingIdentity")|| method.getDeclaringClass().getName().equals("android.os.Binder")){
+            return true;
+        }
+        return false;
+    }
+
+    public boolean isRestoreCallingIdentity(SootMethod method) {
+        if(method.getName().equals("restoreCallingIdentity")|| method.getDeclaringClass().getName().equals("android.os.Binder")){
+            return true;
+        }
+        return false;
+    }
+
+
     public boolean isAccessControlNode(SootMethod method) {
         Boolean isAccessControl = false;
         OnTheFlyJimpleBasedICFG cfg = new OnTheFlyJimpleBasedICFG(method);              
         if (method.hasActiveBody()) {
+            
             Body body = method.getActiveBody();
             List<Unit> units = new ArrayList<Unit>();
             for (Unit unit : body.getUnits()) {
