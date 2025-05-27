@@ -8,6 +8,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.HashSet;
 
 
 public class ResultExporter {
@@ -197,5 +198,32 @@ public class ResultExporter {
         public String getMsg() {
             return msg;
         }
+    }
+
+    public static Set<String> readExistingResults(String outputPath) {
+        Set<String> existingResults = new HashSet<>();
+        File file = new File(outputPath);
+        
+        if (!file.exists()) {
+            return existingResults;
+        }
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                try {
+                    ResultOutput result = JSON.parseObject(line, ResultOutput.class);
+                    if (result != null && result.getClassName() != null && result.getSignature() != null) {
+                        existingResults.add(result.getClassName() + "#" + result.getSignature());
+                    }
+                } catch (Exception e) {
+                    Log.warn("Failed to parse result line: " + line);
+                }
+            }
+        } catch (IOException e) {
+            Log.error("Failed to read existing results: " + e.getMessage());
+        }
+        
+        return existingResults;
     }
 }

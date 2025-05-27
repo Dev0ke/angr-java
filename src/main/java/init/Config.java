@@ -12,9 +12,9 @@ public class Config {
     public static boolean enableParamSymbolize = true;
 
     public static int LoopLimit = 1;
-    public static int ACLoopLimit = 4;
+    public static int ACLoopLimit = 8;
     public static int branchLimit = 256;
-    public static int depthLimit = 1000;
+    public static int depthLimit = 60;
     public static int visitedMethodLimit = 2;
     public static int taskTimeout = 6*60; // 单个任务超时时间，默认30分钟
 

@@ -32,9 +32,10 @@ public class PathAnalyze {
     
     // 记录已求解的约束键，避免重复求解
     private Set<String> solvedConstraints;
-    
     // 缓存 solveConstraintsSingle 的结果
     private Map<String, Boolean> constraintsSingleCache;
+    // 缓存方法的CFG
+    private Map<Integer, ExceptionalUnitGraph> cfgCache;
 
     public PathAnalyze(SootMethod entryMethod,HashSet<SootMethod> CheckMethods) {
         this.CheckMethods = CheckMethods;
@@ -42,10 +43,11 @@ public class PathAnalyze {
         this.analyzeResult = new ArrayList<>();
         this.z3Ctx = new Context();
         this.enableSolve = false;
-        // 初始化已求解约束集合
         this.solvedConstraints = new HashSet<>();
         // 初始化 solveConstraintsSingle 缓存
         this.constraintsSingleCache = new HashMap<>();
+        // 初始化CFG缓存
+        this.cfgCache = new HashMap<>();
         // start
         Log.info("[+] Start PathAnalyze in API: " + this.entryMethod.getName());
 
@@ -127,7 +129,18 @@ public class PathAnalyze {
         Log.warn("[+] Analyzing method: " + m.getDeclaringClass().getName() + "." + m.getName());
         OnTheFlyJimpleBasedICFG icfg = new OnTheFlyJimpleBasedICFG(m);
         Body body = m.retrieveActiveBody();
-        ExceptionalUnitGraph cfg = new ExceptionalUnitGraph(body);
+        
+        // 获取方法的哈希值
+        int methodHash = SimState.genMethodHash(m);
+        
+        // 检查缓存中是否存在CFG
+        ExceptionalUnitGraph cfg = cfgCache.get(methodHash);
+        if (cfg == null) {
+            // 如果缓存中不存在，创建新的CFG并存入缓存
+            cfg = new ExceptionalUnitGraph(body);
+            cfgCache.put(methodHash, cfg);
+        }
+        
         state.setCurCFG(cfg);
         Unit entryPoint = cfg.getHeads().get(0);
 
@@ -290,46 +303,6 @@ public class PathAnalyze {
                 if (result != null) {
                     Expr resultExpr = result.getExpr();
                     boolean isAccessControl = AccessControlUtils.isAccessControlSym(result);
-
-                    // TODO 感觉需要修复一下
-                    // if(state_true.getBranchDepth() > Config.branchLimit  && !isAccessControl){
-                    //     Log.info("Branch Limit: " + state_true.getBranchDepth());
-
-                    //     int choice = 0;
-                    //     int branchCount0 = state_true.getBranchCount(curUnit,0);
-                    //     int branchCount1 = state_true.getBranchCount(curUnit,1);
-                    //     if(branchCount0 > branchCount1){
-                    //         choice = 1;
-                    //     } else if(branchCount0 < branchCount1){
-                    //         choice = 0;
-                    //     } else {
-                    //         Random random = new Random();
-                    //         choice = random.nextInt(2);
-                    //     }
-
-                    //     // TRUE state
-                    //     if(choice == 0){ 
-                    //         if(isAccessControl){
-                    //             state_true.addGlobalConstraint(resultExpr);
-                    //         } else{
-                    //             state_true.addLocalConstraint(resultExpr);
-                    //         }
-                    //         state_true.addInstCount(curUnit,0);
-                    //         doOne(branch_true, state_true, false);
-                    //     }
-
-                    //     // FALSE state
-                    //     else{ 
-                    //         if(isAccessControl){
-                    //             state_false.addGlobalConstraint(this.z3Ctx.mkNot(resultExpr));
-                    //         } else{
-                    //             state_false.addLocalConstraint(this.z3Ctx.mkNot(resultExpr));
-                    //         }
-                    //         state_false.addInstCount(curUnit,1);
-                    //         doOne(branch_false, state_false, false);      
-                    //     }
-                    //     return;
-                    // }
 
                     Log.info("|- IfStmt 1, condition [TRUE]: " + condition);
                     if(isAccessControl){
@@ -998,16 +971,22 @@ public class PathAnalyze {
             }
         }
 
+        if(state.callDepth > Config.depthLimit){
+            Log.info("Call Depth Limit: " + state.callDepth);
+            Unit ret = postInvoke(state);
+            doOne(ret, state, true);
+            return;
+        }
 
-        OnTheFlyJimpleBasedICFG cfg = new OnTheFlyJimpleBasedICFG(callee);
+
         Boolean hasActiveBody = callee.hasActiveBody();
+        if(!hasActiveBody){
+            new OnTheFlyJimpleBasedICFG(callee);
+        }
+        hasActiveBody = callee.hasActiveBody();
+        
 
-        // if(state.callDepth > Config.depthLimit){
-        //     Log.info("Call Depth Limit: " + state.callDepth);
-        //     Unit ret = postInvoke(state);
-        //     doOne(ret, state, true);
-        //     return;
-        // }
+
         // if(state.visitedMethods.contains(callee)){
         //     Log.info("Already Visited: " + callee.getName());
         //     Unit ret = postInvoke(state);
@@ -1036,7 +1015,8 @@ public class PathAnalyze {
 
             if (ret instanceof AssignStmt assign) {
                 Value left = assign.getLeftOp();
-                SymBase e = SymGen.makeSymbol(this.z3Ctx,left.getType(),left.toString());
+                String name = className.split("\\.")[className.split("\\.").length - 1] + "." + methodName;
+                SymBase e = SymGen.makeSymbol(this.z3Ctx,left.getType(),name);
                 if(e != null){
                     updateValue(left, e, state);
                 }
@@ -1134,7 +1114,6 @@ public class PathAnalyze {
 
     public void printSimplifyConstaints(List<Expr> constraints) {
 
-        
         // 生成缓存键
         String cacheKey = generateConstraintCacheKey(constraints);
         
@@ -1190,6 +1169,11 @@ public class PathAnalyze {
         // 清理 solveConstraintsSingle 缓存
         if (this.constraintsSingleCache != null) {
             this.constraintsSingleCache.clear();
+        }
+
+        // 清理CFG缓存
+        if (this.cfgCache != null) {
+            this.cfgCache.clear();
         }
     }
 

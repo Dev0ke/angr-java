@@ -142,16 +142,20 @@ public class FirmwareUtils {
     }
 
 
-    public static List<String> findAllFiles(String directoryPath) {
+    public static List<String> findAllFiles(String directoryPath,Boolean useTemp) {
         //clean temp dir include subdir
-        deleteDirectory(new File(Config.tempPath));
-
+        if(!useTemp){
+            deleteDirectory(new File(Config.tempPath));
+        }
         List<String> allFiles = new ArrayList<>();
         allFiles.addAll(findApkFiles(directoryPath));
-        List<String> jarFiles = findJarFiles(directoryPath);
-        //convert jar to dex
-        for (String jarFile : jarFiles) {
-            convertJar(jarFile);
+        if(!useTemp){
+            List<String> jarFiles = findJarFiles(directoryPath);
+            //convert jar to dex
+            for (String jarFile : jarFiles) {
+                convertJar(jarFile);
+            }
+            allFiles.addAll(findDexfiles(Config.tempPath));
         }
         allFiles.addAll(findDexfiles(Config.tempPath));
         return allFiles;

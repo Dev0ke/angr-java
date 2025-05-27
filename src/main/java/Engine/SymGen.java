@@ -1,6 +1,10 @@
 package Engine;
 
 
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
 import com.microsoft.z3.*;
 
 import com.microsoft.z3.Context;
@@ -11,12 +15,7 @@ import soot.jimple.*;
 import soot.jimple.internal.JNewArrayExpr;
 import utils.Log;
 
-
 public class SymGen {
-    // public Context ctx;
-    private static final String STRING_TYPE = "java.lang.String";
-    private static final String CHAR_SEQUENCE_TYPE = "java.lang.CharSequence";
-    private static final String STRING_BUILDER_TYPE = "java.lang.StringBuilder";
 
     public static SymBase makeArray(Context ctx, JNewArrayExpr newArrayExpr, String name){
         // Extract the base type of the array
@@ -39,11 +38,8 @@ public class SymGen {
                     // For primitive types, create symbolic variables
                     SymBase elemValue = makeSymbol(ctx, baseType, elemName);
                     arrayList.add(elemValue);
-                } else if (baseType instanceof RefType) {
-                    RefType refType = (RefType) baseType;
-                    String className = refType.getClassName();
-                    
-                    if (STRING_TYPE.equals(className) || CHAR_SEQUENCE_TYPE.equals(className)) {
+                } else if (baseType instanceof RefType ref) {
+                    if (TypeUtils.isStringType(ref)) {
                         // For strings, create symbolic string variables
                         SeqExpr<CharSort> stringExpr = ctx.mkString(elemName);
                         SymString stringElem = new SymString(stringExpr, elemName);
@@ -149,15 +145,13 @@ public class SymGen {
         } else if (type instanceof LongType) {
             Expr expr = ctx.mkBVConst(name, 64);
             return new SymPrim(type, expr, name);
-        } else if (type instanceof RefType refType) {
-            String refClassName = refType.getClassName();
+        } else if (type instanceof RefType ref) {
             // Use String.equals for string comparison
-            if (STRING_TYPE.equals(refClassName) || CHAR_SEQUENCE_TYPE.equals(refClassName) || STRING_BUILDER_TYPE.equals(refClassName)) {
+            if (TypeUtils.isStringType(ref)) {
                 SeqExpr<CharSort> stringExpr = ctx.mkString(name);
                 return new SymString(stringExpr, name);
             } 
-            
-            Log.error("Unsupported RefType in makeSymbol: " + refClassName);
+            Log.error("Unsupported RefType in makeSymbol: " + ref.toString());
             return null;
         }
         // } else if (type instanceof ArrayType arrayType) {

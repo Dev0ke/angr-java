@@ -5,8 +5,21 @@ import soot.dava.internal.javaRep.DIntConstant;
 import soot.jimple.*;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 public class TypeUtils {
+
+
+    private static final Set<String> StringClass = Set.of(
+        "java.lang.String",
+        "java.lang.CharSequence",
+        "java.lang.StringBuilder",
+        "java.lang.StringBuffer"
+    );
+
+
+
+
     // Cache for type width to avoid repeated calculations
     private static final Map<Type, Integer> TYPE_WIDTH_CACHE = new HashMap<>();
 
@@ -16,6 +29,14 @@ public class TypeUtils {
     public static boolean isPrimType(Type type) {
         return type instanceof PrimType;
     }
+    public static boolean isStringType(String className){
+        return StringClass.contains(className);
+    }
+
+    public static boolean isStringType(RefType refType){
+        return StringClass.contains(refType.getClassName());
+    }
+
 
     public static boolean isSignedType(Type type) {
         if (type == null) {

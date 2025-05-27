@@ -35,8 +35,6 @@ import utils.ResultExporter;
 
 import init.Config;
 
-
-
 import Engine.PathAnalyze;
 import module.ClearDetector;
 
@@ -63,22 +61,15 @@ public class Main {
         );
 
         // 4. 初始化环境
-
         String androidJarPath = JimpleConverter.getAndroidJarpath(APIversion);
-        List<String> allFiles = FirmwareUtils.findAllFiles(inputPath);
+        List<String> allFiles = FirmwareUtils.findAllFiles(inputPath,false);
         FirmwareUtils.removeErrorFile(allFiles);
         
-
         SootEnv sootEnv = new SootEnv(androidJarPath, allFiles, Options.src_prec_apk);
         sootEnv.initEnv();
 
-        // HashMap<String,List<String>> apiList2 = APIFinder.findServiceAPI();
-        // HashMap<String,List<String>> apiList1 = APIFinder.findProviderAPI();
-        // apiList2.putAll(apiList1);
-
         APIFinder3 finder = new APIFinder3();
         HashMap<String,HashSet<String>> apiList2 = finder.collectAllClassApis(false);
-
 
         APIFinder2 finder2 = new APIFinder2();
         HashMap<String,HashSet<String>> apiList3 = finder2.collectAllClassApis(true);
@@ -94,24 +85,47 @@ public class Main {
             }
         }
 
-        // 预加载所有SootMethod对象
-        Map<String, SootMethod> preloadedMethods = preloadSootMethods(apiList2, sootEnv);
+        // 读取已有结果
+        Set<String> existingResults = ResultExporter.readExistingResults(Config.resultPath);
+        Log.info("Found " + existingResults.size() + " existing results");
 
-        // System.exit(0);
+        // 过滤掉已处理的方法
+        HashMap<String, HashSet<String>> filteredApiList = new HashMap<>();
+        int skippedCount = 0;
+        for (Map.Entry<String, HashSet<String>> entry : apiList2.entrySet()) {
+            String className = entry.getKey();
+            HashSet<String> methodList = entry.getValue();
+            HashSet<String> filteredMethods = new HashSet<>();
+            
+            for (String methodSign : methodList) {
+                String key = className + "#" + methodSign;
+                if (!existingResults.contains(key)) {
+                    filteredMethods.add(methodSign);
+                } else {
+                    skippedCount++;
+                }
+            }
+            
+            if (!filteredMethods.isEmpty()) {
+                filteredApiList.put(className, filteredMethods);
+            }
+        }
+        Log.info("Skipped " + skippedCount + " already processed methods");
+        Log.info("Remaining methods to process: " + filteredApiList.values().stream().mapToInt(Set::size).sum());
+
+        // 预加载所有SootMethod对象
+        Map<String, SootMethod> preloadedMethods = preloadSootMethods(filteredApiList, sootEnv);
 
         // 5. 使用批处理方式处理任务
         ResultExporter resultExporter = new ResultExporter(Config.resultPath);
         List<Future<?>> futures = new ArrayList<>();
 
-        for (Map.Entry<String, HashSet<String>> entry : apiList2.entrySet()) {
+        for (Map.Entry<String, HashSet<String>> entry : filteredApiList.entrySet()) {
             String className = entry.getKey();
             HashSet<String> methodList = entry.getValue();
 
             // 6. 批量提交任务
             for (String methodSign : methodList) {
-                // List<String> EXmethodSigns = apiList2.get(className);
-                // if(EXmethodSigns != null && EXmethodSigns.contains(methodSign))
-                //     continue;
                 Future<?> future = executor.submit(() -> {
                     try {
                         String key = className + "#" + methodSign;
@@ -139,11 +153,8 @@ public class Main {
                     }
                 });
                 futures.add(future);
-
             }
         }
-
-
 
         executor.shutdown();
         try {
@@ -151,13 +162,16 @@ public class Main {
         } catch (InterruptedException e) {
             Log.error("Executor termination interrupted: " + e.getMessage());
         }
-
     }
 
     public static void test_arc_api(String arcade_api_path,int APIversion,String inputPath) {
 
         // 1. 预先加载API列表
         HashMap<String, List<String>> apiList = readAPIfromFile(arcade_api_path);
+
+        // 2. 读取已有结果
+        Set<String> existingResults = ResultExporter.readExistingResults(Config.resultPath);
+        Log.info("Found " + existingResults.size() + " existing results");
 
         // 3. 优化线程池配置
         int processors = Runtime.getRuntime().availableProcessors();
@@ -170,29 +184,50 @@ public class Main {
         );
 
         // 4. 初始化环境
-
         String androidJarPath = JimpleConverter.getAndroidJarpath(APIversion);
-        List<String> allFiles = FirmwareUtils.findAllFiles(inputPath);
+        List<String> allFiles = FirmwareUtils.findAllFiles(inputPath,true);
         FirmwareUtils.removeErrorFile(allFiles);
         Log.info("[-] Total files: " + allFiles.size());
         SootEnv sootEnv = new SootEnv(androidJarPath, allFiles, Options.src_prec_apk);
         sootEnv.initEnv();
         
-        // 预加载所有SootMethod对象
-        Map<String, SootMethod> preloadedMethods = preloadSootMethods(apiList, sootEnv);
-        
-        // 5. 使用批处理方式处理任务
-        ResultExporter resultExporter = new ResultExporter(Config.resultPath);
-        List<Future<?>> futures = new ArrayList<>();
-
-
+        // 5. 过滤掉已处理的方法
+        HashMap<String, List<String>> filteredApiList = new HashMap<>();
+        int skippedCount = 0;
         for (Map.Entry<String, List<String>> entry : apiList.entrySet()) {
             String className = entry.getKey();
             List<String> methodList = entry.getValue();
-
-            // 6. 批量提交任务
+            List<String> filteredMethods = new ArrayList<>();
+            
             for (String methodSign : methodList) {
+                String key = className + "#" + methodSign;
+                if (!existingResults.contains(key)) {
+                    filteredMethods.add(methodSign);
+                } else {
+                    skippedCount++;
+                }
+            }
+            
+            if (!filteredMethods.isEmpty()) {
+                filteredApiList.put(className, filteredMethods);
+            }
+        }
+        Log.info("Skipped " + skippedCount + " already processed methods");
+        Log.info("Remaining methods to process: " + filteredApiList.values().stream().mapToInt(List::size).sum());
+        
+        // 6. 预加载所有SootMethod对象
+        Map<String, SootMethod> preloadedMethods = preloadSootMethods(filteredApiList, sootEnv);
+        
+        // 7. 使用批处理方式处理任务
+        ResultExporter resultExporter = new ResultExporter(Config.resultPath);
+        List<Future<?>> futures = new ArrayList<>();
 
+        for (Map.Entry<String, List<String>> entry : filteredApiList.entrySet()) {
+            String className = entry.getKey();
+            List<String> methodList = entry.getValue();
+
+            // 8. 批量提交任务
+            for (String methodSign : methodList) {
                 Future<?> future = executor.submit(() -> {
                     try {
                         String key = className + "#" + methodSign;
@@ -220,10 +255,8 @@ public class Main {
                     } 
                 });
                 futures.add(future);
-
             }
         }
-
 
         executor.shutdown();
         try {
@@ -231,7 +264,6 @@ public class Main {
         } catch (InterruptedException e) {
             Log.error("Executor termination interrupted: " + e.getMessage());
         }
-
     }
 
     // 抽取的辅助方法
@@ -327,7 +359,7 @@ public class Main {
     public static void testByMethodName(String className, String methodName) {
 
         String androidJarPath = JimpleConverter.getAndroidJarpath(defaultAPIversion);
-        List<String> allFiles = FirmwareUtils.findAllFiles(defaultinputPath);
+        List<String> allFiles = FirmwareUtils.findAllFiles(defaultinputPath,false);
         FirmwareUtils.removeErrorFile(allFiles);
         Log.info("[-] Total files: " + allFiles.size());
         SootEnv sootEnv = new SootEnv(androidJarPath, allFiles, Options.src_prec_apk);
@@ -342,9 +374,9 @@ public class Main {
     }
 
     public static void testOneBySign(String className, String signature) {
-
+        long paStartTime = System.currentTimeMillis();
         String androidJarPath = JimpleConverter.getAndroidJarpath(defaultAPIversion);
-        List<String> allFiles = FirmwareUtils.findAllFiles(defaultinputPath);
+        List<String> allFiles = FirmwareUtils.findAllFiles(defaultinputPath,true);
         FirmwareUtils.removeErrorFile(allFiles);
         Log.info("[-] Total files: " + allFiles.size());
 
@@ -365,6 +397,14 @@ public class Main {
         for (List<String> path : paresult) {
             Log.info(" - " + path);
         }
+
+        long paEndTime = System.currentTimeMillis();
+
+        // write to result file
+        ResultExporter resultExporter = new ResultExporter(Config.resultPath);
+        resultExporter.writeResult(ResultExporter.CODE_SUCCESS, className, signature, paresult,
+                paEndTime - paStartTime, "");
+
     
     }
 
@@ -383,7 +423,7 @@ public class Main {
         // String firmPath = "/public/CustomRoms/xiaomi_yuechu";
         int APIV = 33;
         String androidJarPath = JimpleConverter.getAndroidJarpath(APIV);
-        List<String> allFiles = FirmwareUtils.findAllFiles(firmPath);
+        List<String> allFiles = FirmwareUtils.findAllFiles(firmPath,false);
         FirmwareUtils.removeErrorFile(allFiles);
         Log.info("FILES : " + allFiles.size());
         
@@ -440,7 +480,7 @@ public class Main {
 
     public static void test_find3(int APIversion,String inputPath){
         String androidJarPath = JimpleConverter.getAndroidJarpath(APIversion);
-        List<String> allFiles = FirmwareUtils.findAllFiles(inputPath);
+        List<String> allFiles = FirmwareUtils.findAllFiles(inputPath,false);
         FirmwareUtils.removeErrorFile(allFiles);
         SootEnv sootEnv = new SootEnv(androidJarPath, allFiles, Options.src_prec_apk);
         sootEnv.initEnv();
@@ -469,7 +509,7 @@ public class Main {
 
     public static void test_find(int APIversion,String inputPath){
         String androidJarPath = JimpleConverter.getAndroidJarpath(APIversion);
-        List<String> allFiles = FirmwareUtils.findAllFiles(inputPath);
+        List<String> allFiles = FirmwareUtils.findAllFiles(inputPath,false);
         FirmwareUtils.removeErrorFile(allFiles);
         
 
@@ -533,12 +573,12 @@ public class Main {
     public static String defaultinputPath = inputPath_7;
 
     public static void main(String[] args) {
-        // Config.logLevel = "INFO";
+        // Config.logLevel = "OFF";
         init();
-        long startTime = System.currentTimeMillis();
+        // long startTime = System.currentTimeMillis();
         // test_oppo();
         // test_arc_api(Config.AOSP_601_ARCADE, 23, inputPath_6);
-        test_arc_api(Config.AOSP_7_ARCADE, 24, inputPath_7);
+        // test_arc_api(Config.AOSP_7_ARCADE, 24, inputPath_7);
         // test_full_api(24, inputPath_7);
         // test_full_api(23, inputPath_6); 
         // test_find3(24, inputPath_7);
@@ -549,9 +589,10 @@ public class Main {
         // testOneBySign("com.android.server.notification.NotificationManagerService$5","java.util.List getZenRules()");
         // testOneBySign("com.android.server.PersistentDataBlockService$1","boolean getOemUnlockEnabled()");
 
-        // testOneBySign("com.android.server.devicepolicy.DevicePolicyManagerService","int getPasswordMinimumLowerCase(android.content.ComponentName,int,boolean)");
-        long endTime = System.currentTimeMillis();
-        Log.info("[-] Time cost: " + (endTime - startTime) + "ms");
+        testOneBySign("com.android.server.devicepolicy.DevicePolicyManagerService","int getPasswordMinimumLowerCase(android.content.ComponentName,int,boolean)");
+        // testOneBySign(args[0], args[1]);
+        // long endTime = System.currentTimeMillis();
+        // Log.info("[-] Time cost: " + (endTime - startTime) + "ms");
     }
 
 }

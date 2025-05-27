@@ -73,7 +73,7 @@ public class SimState {
             return this.visitedMethods.getOrDefault(methodHash, 0);
         }
 
-        public int genMethodHash(SootMethod method) {
+        public static int genMethodHash(SootMethod method) {
             String className = method.getDeclaringClass().getName();
             String methodName = method.getName();
             String methodSignature = method.getSignature();
