@@ -1,6 +1,8 @@
 package utils;
 
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileReader;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -44,7 +46,26 @@ public class FirmwareUtils {
         }
         return dexFiles;
     }
-
+    
+    public static int getAPIVersion(String buildPropPath) {
+        String apiKey = "ro.build.version.sdk";
+        try (BufferedReader reader = new BufferedReader(new FileReader(buildPropPath))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (line.startsWith(apiKey)) {
+                    String[] parts = line.split("=");
+                    if (parts.length > 1) {
+                        Log.info("[+] API Version: " + parts[1]);
+                        return Integer.parseInt(parts[1].trim());
+                    }
+                }
+            }
+        } catch (IOException | NumberFormatException e) {
+            Log.error("[-] Failed to read API version from build.prop");
+            e.printStackTrace();
+        }
+        return -1; // 返回-1表示读取失败或未找到API版本信息
+    }
 
     public static List<String> findApkFiles(String directoryPath) {
         List<String> apkFiles = new ArrayList<>();

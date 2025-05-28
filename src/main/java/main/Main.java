@@ -19,7 +19,7 @@ import accessControl.CheckPidAPI;
 import accessControl.CheckUidAPI;
 import accessControl.CheckPermissionAPI;
 
-import entry.APIFinder;
+
 import entry.APIFinder2;
 import entry.APIFinder3;
 
@@ -65,14 +65,15 @@ public class Main {
         List<String> allFiles = FirmwareUtils.findAllFiles(inputPath,false);
         FirmwareUtils.removeErrorFile(allFiles);
         
+        System.out.println("[-] Total files: " + allFiles.size());
         SootEnv sootEnv = new SootEnv(androidJarPath, allFiles, Options.src_prec_apk);
         sootEnv.initEnv();
 
-        APIFinder3 finder = new APIFinder3();
-        HashMap<String,HashSet<String>> apiList2 = finder.collectAllClassApis(false);
-
         APIFinder2 finder2 = new APIFinder2();
-        HashMap<String,HashSet<String>> apiList3 = finder2.collectAllClassApis(true);
+        HashMap<String,HashSet<String>> apiList2 = finder2.collectAllClassApis(false);
+
+        APIFinder3 finder3 = new APIFinder3();
+        HashMap<String,HashSet<String>> apiList3 = finder3.collectAllClassApis(false);
         
         // merage api
         for(Map.Entry<String,HashSet<String>> entry1 : apiList3.entrySet()){
@@ -84,7 +85,7 @@ public class Main {
                 apiList2.put(className, methodList);
             }
         }
-
+        System.out.println("[-] Total api: " + apiList2.values().stream().mapToInt(Set::size).sum());
         // 读取已有结果
         Set<String> existingResults = ResultExporter.readExistingResults(Config.resultPath);
         Log.info("Found " + existingResults.size() + " existing results");
@@ -260,7 +261,6 @@ public class Main {
             resultExporter.writeResult(ResultExporter.CODE_SUCCESS, className, methodSignature, result,
                     paEndTime - paStartTime, "");
         } finally {
-            // 确保Z3上下文被正确关闭，防止内存泄漏
             pa.close();
         }
     }
@@ -320,12 +320,7 @@ public class Main {
         // resultExporter.writeResult(ResultExporter.CODE_SUCCESS, className, methodSignature, ,
         //         paEndTime - paStartTime, "");
     }
-    private static void handleTimeout(String className, String methodName,
-            ResultExporter resultExporter, Exception e) {
-        // Log.error("[-] Analyse timeout: ");
-        resultExporter.writeResult(ResultExporter.CODE_TIMEOUT, className, methodName, null, 0,
-                e.toString());
-    }
+
 
     private static void handleError(String className, String methodName,
             ResultExporter resultExporter, Exception e) {
@@ -487,12 +482,12 @@ public class Main {
         // Config.logLevel = "INFO";
         init();
         // long startTime = System.currentTimeMillis();
-        // test_oppo();
+
         // test_arc_api(Config.AOSP_601_ARCADE, 23, inputPath_6);
         // test_arc_api(Config.AOSP_7_ARCADE, 24, inputPath_7);
-        test_full_api(24, inputPath_7);
+        // test_full_api(24, inputPath_7);
         // test_full_api(23, inputPath_6); 
-        // test_find3(24, inputPath_7);
+
         
         // testOneBySign("com.android.server.devicepolicy.DevicePolicyManagerService","boolean setPermittedAccessibilityServices(android.content.ComponentName,java.util.List)");
         // testOneBySign("com.android.internal.telephony.UiccSmsController","boolean copyMessageToIccEfForSubscriber(int,java.lang.String,int,byte[],byte[])");
@@ -501,7 +496,9 @@ public class Main {
         // testOneBySign("com.android.server.PersistentDataBlockService$1","boolean getOemUnlockEnabled()");
 
         // testOneBySign("com.android.server.LockSettingsService","void systemReady()");
-        // testOneBySign(args[0], args[1]);
+
+        // test_full_api(33, "/mnt/hd1/devoke/oppo_op55f3l1/");
+        test_find3(33, "/home/devoke/roms/xiaomi_babylon/");
         // long endTime = System.currentTimeMillis();
         // Log.info("[-] Time cost: " + (endTime - startTime) + "ms");
     }

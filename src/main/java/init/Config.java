@@ -23,7 +23,7 @@ public class Config {
     public static String outputJimplePath = "/home/devoke/decheck/decheck_data/output/jimple";
     public static String androidJarPath = "/home/devoke/decheck/decheck_data/android-platforms-master";
     public static String testInput = "/home/devoke/decheck/decheck_data/input/classes";
-    public static String resultPath = "/home/devoke/decheck/decheck_data/result/result.txt";
+    public static String resultPath = "/home/devoke/decheck/decheck_data/result/result_xiaomi.txt";
     public static String testInput2= "/home/devoke/decheck/decheck_data/target/test-classes";
 
     public static String inputFirmwarePath = "/home/devoke/decheck/decheck_data/system";
