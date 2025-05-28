@@ -63,8 +63,10 @@ public class SymList extends SymBase {
         this.isNull = false;
     }
 
-    public BitVecExpr lengthof(Context ctx){
-        return ctx.mkBV(list.size(), INDEX_BV_SIZE);
+    public SymBase lengthof(Context ctx){
+        Expr v =  ctx.mkBV(list.size(), INDEX_BV_SIZE);
+        // return int 
+        return new SymPrim(soot.IntType.v(), v);
     }
 
     /**

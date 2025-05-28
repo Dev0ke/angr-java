@@ -29,7 +29,7 @@ public class PathAnalyze {
     public boolean enableSolve;
     public List<List<String>> analyzeResult;
     public HashSet<SootMethod> CheckMethods;
-    
+    public long startTime;
     // 记录已求解的约束键，避免重复求解
     private Set<String> solvedConstraints;
     // 缓存 solveConstraintsSingle 的结果
@@ -38,6 +38,7 @@ public class PathAnalyze {
     private Map<Integer, ExceptionalUnitGraph> cfgCache;
 
     public PathAnalyze(SootMethod entryMethod,HashSet<SootMethod> CheckMethods) {
+        this.startTime = System.currentTimeMillis();
         this.CheckMethods = CheckMethods;
         this.entryMethod = entryMethod;
         this.analyzeResult = new ArrayList<>();
@@ -267,7 +268,11 @@ public class PathAnalyze {
      /*   ------------------------------------------------   */
     
     public void doOne(Unit curUnit, SimState state, Boolean isFromReturn) {
-
+        long endTime = System.currentTimeMillis();
+        if((endTime - this.startTime)/1000 > Config.taskTimeout){
+            // Log.info("Time Limit: " + (endTime - this.startTime) + "ms");
+            return;
+        }
         /*   ------------------------------------------------   */
         /*                    From Return                       */
         /*   ------------------------------------------------   */
@@ -374,13 +379,13 @@ public class PathAnalyze {
                     //     return;
                     // }
 
-                    if (state_true.getBranchCount(curUnit,0) <= Config.LoopLimit) {
+                    if (state_true.getBranchCount(curUnit,0) <= Config.nullLoopLimit) {
                         // TODO Add constraint 
                         Log.info("|- IfStmt 1, condition TRUE: " + condition);
                         state_true.addBranchCount(curUnit,0);
                         doOne(branch_true, state_true,  false);
                     }
-                    if (state_false.getBranchCount(curUnit,1) <= Config.LoopLimit) {
+                    if (state_false.getBranchCount(curUnit,1) <= Config.nullLoopLimit) {
                         // TODO Add constraint 
                         Log.info("|- IfStmt 2, condition FALSE: !" + condition);
                         state_false.addBranchCount(curUnit,1);
@@ -458,7 +463,12 @@ public class PathAnalyze {
                     if(sym instanceof SymString symString){
                         // TODO
                         v = symString.length(this.z3Ctx);
-                    } else{
+                    } else if(sym instanceof SymList list){
+                        v = list.lengthof(this.z3Ctx);
+                    }
+                    
+                    else  
+                    {
                         Log.error("Unsupported length type: " + sym.getClass());
                     }
 
@@ -572,7 +582,7 @@ public class PathAnalyze {
                             branchState.addBranchCount(switchStmt, caseIdx);
                             doOne(target, branchState, false);
                         }
-                    } else if(branchState.getBranchCount(switchStmt, caseIdx) <= Config.LoopLimit){
+                    } else if(branchState.getBranchCount(switchStmt, caseIdx) <= Config.nullLoopLimit){
                         branchState.addBranchCount(switchStmt, caseIdx);
                         doOne(target, branchState,false);
                     }
@@ -596,7 +606,7 @@ public class PathAnalyze {
                         branchState.addBranchCount(switchStmt, 0);
                         doOne(defaultTarget, branchState,false);
                     }
-                } else if(branchState.getBranchCount(switchStmt, 0) <= Config.LoopLimit){
+                } else if(branchState.getBranchCount(switchStmt, 0) <= Config.nullLoopLimit){
                     branchState.addBranchCount(switchStmt, 0);
                     doOne(defaultTarget, branchState,  false);
                 }
@@ -632,7 +642,7 @@ public class PathAnalyze {
                             branchState.addBranchCount(tableSwitchStmt, caseIdx);
                             doOne(target, branchState, false);
                         }
-                    } else if(branchState.getBranchCount(tableSwitchStmt, caseIdx) <= Config.LoopLimit){
+                    } else if(branchState.getBranchCount(tableSwitchStmt, caseIdx) <= Config.nullLoopLimit){
                         branchState.addBranchCount(tableSwitchStmt, caseIdx);   
                         doOne(target, branchState,false);
                     }
@@ -656,7 +666,7 @@ public class PathAnalyze {
                         branchState.addBranchCount(tableSwitchStmt, 0);
                         doOne(defaultTarget, branchState,false);
                     }
-                } else if(branchState.getBranchCount(tableSwitchStmt, 0) <= Config.LoopLimit){
+                } else if(branchState.getBranchCount(tableSwitchStmt, 0) <= Config.nullLoopLimit){
                     branchState.addBranchCount(tableSwitchStmt, 0);
                     doOne(defaultTarget, branchState,  false);
                 }
@@ -786,6 +796,8 @@ public class PathAnalyze {
         String className = callee.getDeclaringClass().getName();
 
 
+        /* ----------------------------- java.lang.StringBuilder ----------------------------- */
+
         if(className.equals("java.lang.StringBuilder")){
             if(expr instanceof VirtualInvokeExpr virtualInvokeExpr){
                 Value instance = virtualInvokeExpr.getBase();
@@ -854,6 +866,80 @@ public class PathAnalyze {
             return;
         }
 
+        /* ----------------------------- java.lang.String ----------------------------- */
+
+        if(className.equals("java.lang.String")){
+            if(expr instanceof VirtualInvokeExpr virtualInvokeExpr){
+                Value instance = virtualInvokeExpr.getBase();
+
+                state.popLocalMap();
+                SymBase instanceSym = valueToSym(instance, state);
+                state.pushLocalMap();
+
+                List<SymBase> params = state.getLastParam();
+                SymBase result = null;
+                if(instanceSym instanceof SymString symString){
+                    Log.warn("[+] Handle String: " + className + "." + methodName);
+                    if(methodName.equals("concat")){
+                        SymBase param =  params.get(0);
+                        if(param instanceof SymString str0){
+                            result = symString.concat(this.z3Ctx, str0);
+                        } else if(param instanceof SymPrim prim0){
+                            result = symString.concat(this.z3Ctx, prim0);
+                        }
+                    } else if(methodName.equals("equals")){
+                        SymBase param =  params.get(0);
+                        if(param instanceof SymString str0){
+                            result = symString.equals(this.z3Ctx, str0);
+                        }
+                    }
+                } 
+
+                Unit ret = postInvoke(state);
+                if(result != null){
+                    if (ret instanceof AssignStmt assign) {
+                        Value left = assign.getLeftOp();
+                        updateValue(left, (SymBase)result, state);
+                    } else {
+                        Log.error("Unsupported Ret Unit type:  " + ret.getClass());
+                    }
+                }
+                
+                doOne(ret, state, true);
+                return;
+
+            }
+
+        } else if(methodName.equals("toString")){
+            List<SymBase> params = state.getLastParam();
+            SymBase result = null;
+            int paramSize = params.size();
+            if(paramSize == 0){
+                result = new SymString(this.z3Ctx, expr.toString());
+            } else {
+                SymBase param =  params.get(0);
+                if(param == null){
+                    Log.error("[toString] Unsupported param type: ");
+                } else if(param instanceof SymString str0){
+                    result = str0;
+                } else if(param instanceof SymPrim prim0){
+                    result = SymGen.maketoString(this.z3Ctx, prim0);
+                } else{
+                    Log.error("[toString] Unsupported param type: " + param.getClass());
+                }
+            }
+            Unit ret = postInvoke(state);
+            if (ret instanceof AssignStmt assign) {
+                Value left = assign.getLeftOp();
+                updateValue(left, (SymBase)result, state);
+            } else {
+                Log.error("[toString] Unsupported Ret Unit type:  " + ret.getClass());
+            }
+            
+            
+            doOne(ret, state, true);
+            return;
+        }
 
         if(!state.isClear()){ // 
             boolean isEnforcePermission = EnforcePermissionAPI.isEnforcePermissionAPI(className, methodName);
@@ -940,6 +1026,7 @@ public class PathAnalyze {
             Log.warn("Exception invoke. Terminate.");
             return;
         } 
+
         else if (methodName.equals("clearCallingIdentity")) {
             Log.warn("clearCallingIdentity invoke.");
             state.setClear(true);
@@ -954,7 +1041,7 @@ public class PathAnalyze {
             return;
         }
 
-        
+
         else if (className.equals("android.os.Process") && methodName.equals("myPid")) {
             SymBase e = HookSymbol.handleMyPidAPI(this.z3Ctx, expr, state);
             if (e != null) {
@@ -971,10 +1058,10 @@ public class PathAnalyze {
             }
         }
 
-        if(state.callDepth > Config.depthLimit){
-            Log.info("Call Depth Limit: " + state.callDepth);
-            Unit ret = postInvoke(state);
-            doOne(ret, state, true);
+        if(state.cfgStack.size() > Config.depthLimit){
+            // Log.info("Call Depth Limit: " + state.callDepth);
+            // Unit ret = postInvoke(state);
+            // doOne(ret, state, true);
             return;
         }
 
@@ -1003,9 +1090,10 @@ public class PathAnalyze {
             }
         }
 
-        if( (isAccessControl || ( (enableInterAnalysis && this.CheckMethods.contains(callee) && !state.isClear()) )) 
-            && hasActiveBody
-            && (state.getVisitedMethodCount(callee) < Config.visitedMethodLimit  && !AccessControlUtils.isAccessControlAPI(className, methodName)) 
+        if( hasActiveBody
+            && (isAccessControl || ( (enableInterAnalysis && this.CheckMethods.contains(callee) && !state.isClear()) )) 
+            // && (state.getVisitedMethodCount(callee) < Config.visitedMethodLimit  && !AccessControlUtils.isAccessControlAPI(className, methodName) )
+            // && !BlackList.isBlackList(className, methodName) 
         ) {
             state.addVisitedMethod(callee);
             analyzeMethod(callee, state);
@@ -1064,12 +1152,12 @@ public class PathAnalyze {
         state.pushLocalConstraints();
         state.pushParam(params);
         state.pushCFG();
-        state.callDepth++;
+
     }
 
 
     public Unit postInvoke(SimState state) {
-        state.callDepth--;
+
         state.popCFG();
         state.popParam();
         state.popLocalConstraints();

@@ -285,8 +285,8 @@ public class SymString extends SymBase {
     public SymBase equals(Context ctx, SymString other) {
         BoolExpr result = ctx.mkEq(expr, other.expr);
         // Convert boolean to bitvector
-        BitVecExpr boolBV = (BitVecExpr) ctx.mkITE(result, ctx.mkBV(1, 1), ctx.mkBV(0, 1));
-        return new SymPrim(soot.BooleanType.v(), boolBV);
+        // BitVecExpr boolBV = (BitVecExpr) ctx.mkITE(result, ctx.mkBV(1, 1), ctx.mkBV(0, 1));
+        return new SymPrim(soot.BooleanType.v(), result);
     }
 
     // Splits this string around matches of the given delimiter

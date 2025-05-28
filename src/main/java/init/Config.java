@@ -11,12 +11,13 @@ public class Config {
     public static boolean enableInterAnalysis = true;
     public static boolean enableParamSymbolize = true;
 
-    public static int LoopLimit = 1;
-    public static int ACLoopLimit = 8;
-    public static int branchLimit = 256;
-    public static int depthLimit = 60;
-    public static int visitedMethodLimit = 2;
-    public static int taskTimeout = 6*60; // 单个任务超时时间，默认30分钟
+    public static int LoopLimit = 6;
+    public static int nullLoopLimit = 3;
+    public static int ACLoopLimit = 64;
+    // public static int branchLimit = 256;
+    public static int depthLimit = 30;
+    // public static int visitedMethodLimit = 2;
+    public static int taskTimeout = 20*60; // seconds
 
     // Path Config
     public static String outputJimplePath = "/home/devoke/decheck/decheck_data/output/jimple";

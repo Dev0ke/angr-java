@@ -21,7 +21,7 @@ public class SimState {
         public List<Expr> localConstraints;
         public boolean isClear = false;
 
-        public int callDepth;
+
         public Map<Integer, List<Integer>> instCount;
         public Map<String, SymBase> staticFieldMap;
         public HashMap<Integer, Integer> visitedMethods;
@@ -48,7 +48,6 @@ public class SimState {
             this.visitedMethods = new HashMap<>();
             this.objectMap = new HashMap<>();
             this.curCFG = null;
-            this.callDepth = 0;
 
 
             // stack
@@ -402,8 +401,7 @@ public class SimState {
                 dest.visitedMethods.put(entry.getKey(), entry.getValue());
             }
             
-            // callDepth是基本类型，直接赋值
-            dest.callDepth = this.callDepth;
+
         }
 
         public SimState copy() {

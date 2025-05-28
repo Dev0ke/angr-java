@@ -55,8 +55,8 @@ public class Main {
         ThreadPoolExecutor executor = new ThreadPoolExecutor(
                 processors, // 核心线程数
                 processors * 2, // 最大线程数
-                30L, TimeUnit.SECONDS, // 空闲线程存活时间
-                new LinkedBlockingQueue<>(1000), // 使用有界队列
+                0L, TimeUnit.SECONDS, // 移除空闲线程存活时间限制
+                new LinkedBlockingQueue<>(), // 使用无界队列
                 new ThreadPoolExecutor.CallerRunsPolicy() // 队列满时的处理策略
         );
 
@@ -132,22 +132,12 @@ public class Main {
                         SootMethod m = preloadedMethods.get(key);
                         
                         if (m != null) {
-                            // 设置任务超时时间
-                            long taskStartTime = System.currentTimeMillis();
                             processMethod(m, className, methodSign, resultExporter);
-                            long taskEndTime = System.currentTimeMillis();
-                            
-                            // 检查任务是否超时
-                            if (taskEndTime - taskStartTime > Config.taskTimeout * 1000) {
-                                throw new TimeoutException("Task execution time exceeded " + Config.taskTimeout + " seconds");
-                            }
                         } else {
                             Log.warn("Skipping unpreloaded method: " + className + "." + methodSign);
                             handleError(className, methodSign, resultExporter, 
                                 new RuntimeException("Method not successfully resolved during preloading phase"));
                         }
-                    } catch (TimeoutException e) {
-                        handleTimeout(className, methodSign, resultExporter, e);
                     } catch (Exception e) {
                         handleError(className, methodSign, resultExporter, e);
                     }
@@ -158,7 +148,7 @@ public class Main {
 
         executor.shutdown();
         try {
-            executor.awaitTermination(5, TimeUnit.MINUTES);
+            executor.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
         } catch (InterruptedException e) {
             Log.error("Executor termination interrupted: " + e.getMessage());
         }
@@ -178,8 +168,8 @@ public class Main {
         ThreadPoolExecutor executor = new ThreadPoolExecutor(
                 processors, // 核心线程数
                 processors * 2, // 最大线程数
-                30L, TimeUnit.SECONDS, // 空闲线程存活时间
-                new LinkedBlockingQueue<>(1000), // 使用有界队列
+                0L, TimeUnit.SECONDS, // 移除空闲线程存活时间限制
+                new LinkedBlockingQueue<>(), // 使用无界队列
                 new ThreadPoolExecutor.CallerRunsPolicy() // 队列满时的处理策略
         );
 
@@ -234,22 +224,12 @@ public class Main {
                         SootMethod m = preloadedMethods.get(key);
                         
                         if (m != null) {
-                            // 设置任务超时时间
-                            long taskStartTime = System.currentTimeMillis();
                             processMethod(m, className, methodSign, resultExporter);
-                            long taskEndTime = System.currentTimeMillis();
-                            
-                            // 检查任务是否超时
-                            if (taskEndTime - taskStartTime > Config.taskTimeout * 1000) {
-                                throw new TimeoutException("Task execution time exceeded " + Config.taskTimeout + " seconds");
-                            }
                         } else {
                             Log.warn("Skipping unpreloaded method: " + className + "." + methodSign);
                             handleError(className, methodSign, resultExporter, 
                                 new RuntimeException("Method not successfully resolved during preloading phase"));
                         }
-                    } catch (TimeoutException e) {
-                        handleTimeout(className, methodSign, resultExporter, e);
                     } catch (Exception e) {
                         handleError(className, methodSign, resultExporter, e);
                     } 
@@ -260,7 +240,7 @@ public class Main {
 
         executor.shutdown();
         try {
-            executor.awaitTermination(5, TimeUnit.MINUTES);
+            executor.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
         } catch (InterruptedException e) {
             Log.error("Executor termination interrupted: " + e.getMessage());
         }
@@ -342,14 +322,14 @@ public class Main {
     }
     private static void handleTimeout(String className, String methodName,
             ResultExporter resultExporter, Exception e) {
-        Log.error("[-] Analyse timeout: ");
+        // Log.error("[-] Analyse timeout: ");
         resultExporter.writeResult(ResultExporter.CODE_TIMEOUT, className, methodName, null, 0,
                 e.toString());
     }
 
     private static void handleError(String className, String methodName,
             ResultExporter resultExporter, Exception e) {
-        Log.errorStack("[-] Analyse error: ", e);
+        // Log.errorStack("[-] Analyse error: ", e);
         resultExporter.writeResult(ResultExporter.CODE_ERROR, className, methodName, null, 0,
                 e.toString());
     }
@@ -408,76 +388,7 @@ public class Main {
     
     }
 
-    public static void test_oppo() {
-        int processors = Runtime.getRuntime().availableProcessors();
-        ThreadPoolExecutor executor = new ThreadPoolExecutor(
-                processors, // 核心线程数
-                processors * 2, // 最大线程数
-                30L, TimeUnit.SECONDS, // 空闲线程存活时间
-                new LinkedBlockingQueue<>(1000), // 使用有界队列
-                new ThreadPoolExecutor.CallerRunsPolicy() // 队列满时的处理策略
-        );
-        Log.info("load frim");
-        // 4. 初始化环境
-        String firmPath = "/public/CustomRoms/OPPO_RMX3888_C15_610/fs";
-        // String firmPath = "/public/CustomRoms/xiaomi_yuechu";
-        int APIV = 33;
-        String androidJarPath = JimpleConverter.getAndroidJarpath(APIV);
-        List<String> allFiles = FirmwareUtils.findAllFiles(firmPath,false);
-        FirmwareUtils.removeErrorFile(allFiles);
-        Log.info("FILES : " + allFiles.size());
-        
-
-        SootEnv sootEnv = new SootEnv(androidJarPath, allFiles, Options.src_prec_apk);
-        sootEnv.initEnv();
-
-        HashMap<String,List<String>> apiList2 = APIFinder.findServiceAPI();
-        Log.info("[-] Total API: " + apiList2.size());
-
-        // 预加载所有SootMethod对象
-        Map<String, SootMethod> preloadedMethods = preloadSootMethods(apiList2, sootEnv);
-
-        // 5. 使用批处理方式处理任务
-        ResultExporter resultExporter = new ResultExporter(Config.resultPath);
-        List<Future<?>> futures = new ArrayList<>();
-
-        for (Map.Entry<String, List<String>> entry : apiList2.entrySet()) {
-            String className = entry.getKey();
-            List<String> methodList = entry.getValue();
-
-            // 6. 批量提交任务
-            for (String methodSign : methodList) {
-                Future<?> future = executor.submit(() -> {
-                    try {
-                        String key = className + "#" + methodSign;
-                        SootMethod m = preloadedMethods.get(key);
-                        
-                        if (m != null) {
-                            find_clearAPI(m, className, methodSign, resultExporter);
-                        } else {
-                            Log.warn("Skipping unpreloaded method: " + className + "." + methodSign);
-                            handleError(className, methodSign, resultExporter, 
-                                new RuntimeException("Method not successfully resolved during preloading phase"));
-                        }
-                        // Log.info(className + "\t\t" + methodSign);
-                  
-                    } catch (Exception e) {
-                        handleError(className, methodSign, resultExporter, e);
-                    }
-                });
-                futures.add(future);
-
-            }
-        }
-        executor.shutdown();
-        try {
-            executor.awaitTermination(5, TimeUnit.MINUTES);
-        } catch (InterruptedException e) {
-            Log.error("Executor termination interrupted: " + e.getMessage());
-        }
-
-    }
-
+    
     public static void test_find3(int APIversion,String inputPath){
         String androidJarPath = JimpleConverter.getAndroidJarpath(APIversion);
         List<String> allFiles = FirmwareUtils.findAllFiles(inputPath,false);
@@ -573,13 +484,13 @@ public class Main {
     public static String defaultinputPath = inputPath_7;
 
     public static void main(String[] args) {
-        // Config.logLevel = "OFF";
+        // Config.logLevel = "INFO";
         init();
         // long startTime = System.currentTimeMillis();
         // test_oppo();
         // test_arc_api(Config.AOSP_601_ARCADE, 23, inputPath_6);
         // test_arc_api(Config.AOSP_7_ARCADE, 24, inputPath_7);
-        // test_full_api(24, inputPath_7);
+        test_full_api(24, inputPath_7);
         // test_full_api(23, inputPath_6); 
         // test_find3(24, inputPath_7);
         
@@ -589,7 +500,7 @@ public class Main {
         // testOneBySign("com.android.server.notification.NotificationManagerService$5","java.util.List getZenRules()");
         // testOneBySign("com.android.server.PersistentDataBlockService$1","boolean getOemUnlockEnabled()");
 
-        testOneBySign("com.android.server.devicepolicy.DevicePolicyManagerService","int getPasswordMinimumLowerCase(android.content.ComponentName,int,boolean)");
+        // testOneBySign("com.android.server.LockSettingsService","void systemReady()");
         // testOneBySign(args[0], args[1]);
         // long endTime = System.currentTimeMillis();
         // Log.info("[-] Time cost: " + (endTime - startTime) + "ms");

@@ -373,8 +373,8 @@ public class SymGen {
             Log.error("Unsupported UnopExpr type: " + unopExpr.getClass());
         } else if (src instanceof SymList symList){
             if (unopExpr instanceof LengthExpr){
-                BitVecExpr result = symList.lengthof(ctx);
-                return new SymPrim(src.getType(), result);
+                SymBase result = symList.lengthof(ctx);
+                return result;
             } else{
                 Log.error("Unsupported UnopExpr type: " + unopExpr.getClass());
             }
