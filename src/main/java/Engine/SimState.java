@@ -196,6 +196,8 @@ public class SimState {
         }
 
         public List<SymBase> getLastParam() {
+            if(this.paramList.isEmpty())
+                return null;
             return this.paramList.get(this.paramList.size() - 1);
         }
 
@@ -246,6 +248,16 @@ public class SimState {
         public Expr popGlobalConstraint() {
             return this.globalConstraints.remove(this.globalConstraints.size() - 1);
         }
+
+        public boolean containsGlobalConstraint(Expr c) {
+            String constraintStr = c.toString();
+            for (Expr constraint : this.globalConstraints) {
+                if (constraint.toString().equals(constraintStr)) {
+                    return true;
+                }
+            }
+            return false;
+        }
         
 
         public void addLocalConstraint(Expr c) {
@@ -294,10 +306,25 @@ public class SimState {
             this.staticFieldMap.put(className + "#" + fieldName, e);
         }
 
+        public void addStaticField(String key, SymBase e) {
+            this.staticFieldMap.put(key, e);
+        }
+
         public SymBase getStaticExpr(StaticFieldRef s) {
             String className = s.getField().getDeclaringClass().getName();
             String fieldName = s.getField().getName();
             return this.staticFieldMap.get(className + "#" + fieldName);
+        }
+   
+
+        public void initStaticField(SootClass sc) {
+            String className = sc.getName();
+            this.staticFieldMap.put(className, null);
+        }
+
+        public boolean isStaticFieldInit(SootClass sc) {
+            String className = sc.getName();
+            return this.staticFieldMap.containsKey(className);
         }
 
         public void removeLocal(Value l) {

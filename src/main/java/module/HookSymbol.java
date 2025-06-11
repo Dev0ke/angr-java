@@ -5,9 +5,10 @@ import java.util.List;
 
 
 import com.microsoft.z3.BitVecNum;
+import com.microsoft.z3.CharSort;
 import com.microsoft.z3.Context;
 import com.microsoft.z3.Expr;
-
+import com.microsoft.z3.SeqExpr;
 
 import Engine.SimState;
 import accessControl.CheckAppOpAPI;
@@ -27,19 +28,59 @@ import Engine.SymString;
 public class HookSymbol {
     public static final String UID_PREFIX = "<UID>";
     public static final String PID_PREFIX = "<PID>";
+    public static final String USERID_PREFIX = "<USERID>";
     public static final String APPOP_PREFIX = "<APPOP>";
     public static final String PERMISSION_PREFIX = "<PERMISSION>";
-    // TODO add uid limit
+    public static final String PACKAGENAME_PREFIX = "<PACKAGENAME>";
+
+
     public static SymBase handleUidAPI(Context ctx, InvokeExpr expr, SimState state) {
-        String methodName = expr.getMethod().getName();
-        if (methodName.equals("getCallingUid")) {
-            String symbolName = UID_PREFIX + "CallingUid";
-            SymBase uid = state.getSymbolByName(symbolName);
-            if (uid == null) {
-                uid = SymGen.makeIntSym(ctx, symbolName);
-                state.addSymbol(uid);
+        String symbolName = UID_PREFIX + "CallingUid";
+        SymBase uid = state.getSymbolByName(symbolName);
+        if (uid == null) {
+            uid = SymGen.makeIntSym(ctx, symbolName);
+            state.addSymbol(uid);
+        }
+        SymBase userIdSym = state.getSymbolByName(USERID_PREFIX + "CallingUserId");
+        if(userIdSym != null){
+            Expr divExpr = ctx.mkBVUDiv(uid.getExpr(), ctx.mkBV(10000, 32));
+            Expr eqExpr = ctx.mkEq(divExpr, userIdSym.getExpr());
+            if(!state.containsGlobalConstraint(eqExpr)){
+                state.addGlobalConstraint(eqExpr);
             }
-            return uid;
+        }
+        return uid;
+    }
+
+    public static SymBase handleUserIdAPI(Context ctx, InvokeExpr expr, SimState state) {
+        String symbolName = USERID_PREFIX + "CallingUserId";
+        SymBase userIdSym = state.getSymbolByName(symbolName);
+        if (userIdSym == null) {
+            userIdSym = SymGen.makeIntSym(ctx, symbolName);
+            state.addSymbol(userIdSym);
+        }
+        SymBase UidSym = state.getSymbolByName(UID_PREFIX + "CallingUid");
+        if(UidSym != null){
+            Expr divExpr = ctx.mkBVUDiv(UidSym.getExpr(), ctx.mkBV(10000, 32));
+            Expr eqExpr = ctx.mkEq(divExpr, userIdSym.getExpr());
+            if(!state.containsGlobalConstraint(eqExpr)){
+                state.addGlobalConstraint(eqExpr);
+            }
+        }
+        return userIdSym;
+    }
+
+    public static SymBase handlePackageNameAPI(Context ctx, InvokeExpr expr, SimState state) {
+        String methodName = expr.getMethod().getName();
+        if (methodName.equals("getPackageName")) {
+            String symbolName = PACKAGENAME_PREFIX + "CallingPackageName";
+            SymBase nameSymbol = state.getSymbolByName(symbolName);
+            if (nameSymbol == null) {
+                SeqExpr<CharSort> stringExpr = ctx.mkString(symbolName);
+                nameSymbol = new SymString(stringExpr, symbolName);
+                state.addSymbol(nameSymbol);
+            }
+            return nameSymbol;
         }
         return null;
     }
@@ -60,17 +101,13 @@ public class HookSymbol {
 
     // TODO add uid limit
     public static SymBase handlePidAPI(Context ctx, InvokeExpr expr, SimState state) {
-        String methodName = expr.getMethod().getName();
-        if (methodName.equals("getCallingPid")) {
-            String symbolName = PID_PREFIX + "CallingPid";
-            SymBase pid = state.getSymbolByName(symbolName);
-            if (pid == null) {
-                pid = SymGen.makeIntSym(ctx, symbolName);
-                state.addSymbol(pid);
-            }
-            return pid;
+        String symbolName = PID_PREFIX + "CallingPid";
+        SymBase pid = state.getSymbolByName(symbolName);
+        if (pid == null) {
+            pid = SymGen.makeIntSym(ctx, symbolName);
+            state.addSymbol(pid);
         }
-        return null;
+        return pid;
     }
 
     public static SymBase handleMyPidAPI(Context ctx, InvokeExpr expr, SimState state) {
@@ -122,6 +159,9 @@ public class HookSymbol {
         }
         return null;
     }
+
+
+
 
     public static SymBase handlePermissionAPI(Context ctx, InvokeExpr expr, SimState state) {
         List<SymBase> params = state.getLastParam();

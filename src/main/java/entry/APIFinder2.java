@@ -13,16 +13,25 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
 import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.Future;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.Collections;
 
 public class APIFinder2 {
     
-    private HashSet<SootMethod> visitedMethods;
-    private HashMap<SootClass, HashSet<SootMethod>> collectedServiceApis;
+    private Set<SootMethod> visitedMethods;
+    private Map<SootClass, Set<SootMethod>> collectedServiceApis;
+    private transient ExecutorService executorService;
+    private final int numThreads = Runtime.getRuntime().availableProcessors();
     
     public APIFinder2() {
         // PackManager.v().runPacks();
-        this.visitedMethods = new HashSet<>();
-        this.collectedServiceApis = new HashMap<>();
+        this.visitedMethods = Collections.synchronizedSet(new HashSet<>());
+        this.collectedServiceApis = new ConcurrentHashMap<>();
+        this.executorService = Executors.newFixedThreadPool(numThreads);
     }
 
 
@@ -134,10 +143,11 @@ public class APIFinder2 {
     public HashMap<String, HashSet<String>> collectAllClassApis(boolean useCache) {
         Log.info("Starting API collection process for Android server classes");
         
-        // Reset visited methods for fresh analysis
         this.visitedMethods.clear();
-        // Clear collected service APIs for fresh analysis
         this.collectedServiceApis.clear();
+        if (this.executorService == null || this.executorService.isShutdown()) {
+            this.executorService = Executors.newFixedThreadPool(numThreads);
+        }
         HashSet<SootMethod> methodsWithPBS;
         if(useCache){
             methodsWithPBS = loadCacheFromFile("/home/devoke/decheck/decheck_data/cache/AOSP7.txt");
@@ -151,9 +161,8 @@ public class APIFinder2 {
         collectServiceApis(methodsWithPBS);
         Log.info("Collected APIs from " + collectedServiceApis.size() + " service classes");
         
-        // Convert SootClass keys to String class names and SootMethod sets to String method signatures
         HashMap<String, HashSet<String>> result = new HashMap<>();
-        for (Map.Entry<SootClass, HashSet<SootMethod>> entry : collectedServiceApis.entrySet()) {
+        for (Map.Entry<SootClass, Set<SootMethod>> entry : collectedServiceApis.entrySet()) {
             String className = entry.getKey().getName();
             HashSet<String> methodSignatures = new HashSet<>();
             for (SootMethod method : entry.getValue()) {
@@ -171,74 +180,76 @@ public class APIFinder2 {
      * @return HashSet of SootMethods that contain PBS calls
      */
     private HashSet<SootMethod> collectMethodsWithPBS() {
-        HashSet<SootMethod> methodsWithPBS = new HashSet<>();
-        int totalClassesScanned = 0;
-        int totalMethodsScanned = 0;
+        Set<SootMethod> methodsWithPBS = Collections.synchronizedSet(new HashSet<>()); 
+        List<Future<List<SootMethod>>> futures = new ArrayList<>();
+        // int totalClassesScanned = 0; // These counters will be hard to maintain accurately in parallel
+        // int totalMethodsScanned = 0;
         
-        // Iterate through all application classes
         Chain<SootClass> allClasses = Scene.v().getApplicationClasses();
         for (SootClass sootClass : allClasses) {
-            totalClassesScanned++;
-            
-            List<SootMethod> methods = sootClass.getMethods();
-            for (int i = 0; i < methods.size(); i++) {
-                SootMethod method = methods.get(i);
-                totalMethodsScanned++;
-                
-                // Skip the actual declaration of service publishing methods
-                if (method.getName().equals("publishBinderService") || 
-                    method.getName().equals("publishLocalService") || 
-                    method.getName().equals("addService")) {
-                    continue;
-                }
-                // build cfg 
-
-                OnTheFlyJimpleBasedICFG cfg = new OnTheFlyJimpleBasedICFG(method);
-                
-
-                // Check if method has active body
-                if (!method.hasActiveBody()) {
-                    continue;
-                }
-
-                try {
-                    Body body = method.retrieveActiveBody();
-                
-                    // Iterate through all units in the method body
-                    for (Unit unit : body.getUnits()) {
-                        String methodName = "";
-                        if(unit instanceof JInvokeStmt invokeStmt){
-
-                            if(invokeStmt.containsInvokeExpr()){
-                                InvokeExpr invokeExpr = invokeStmt.getInvokeExpr();
-                                methodName = invokeExpr.getMethod().getName();
-                            }
-                        } else if(unit instanceof JAssignStmt assignStmt){
-
-                            if(assignStmt.containsInvokeExpr()){
-                                InvokeExpr invokeExpr = assignStmt.getInvokeExpr();
-                                methodName = invokeExpr.getMethod().getName();
-                            }
-                        }
-                        
-                        if(methodName.equals("addService") || methodName.equals("publishBinderService")){
-                            methodsWithPBS.add(method);
-                            break; // Found one, no need to check more units in this method
-                        }
-                        
-                        // Check for publishBinderService or addService calls (but not LocalService)
-
+            // totalClassesScanned++; // Avoid modifying shared counters in the loop dispatching part
+            final SootClass currentClass = sootClass;
+            Future<List<SootMethod>> future = executorService.submit(() -> {
+                List<SootMethod> foundMethodsInClass = new ArrayList<>();
+                List<SootMethod> methods = currentClass.getMethods();
+                for (int i = 0; i < methods.size(); i++) {
+                    SootMethod method = methods.get(i);
+                    // totalMethodsScanned++; // This would need to be atomic if done here
+                    
+                    if (method.getName().equals("publishBinderService") || 
+                        method.getName().equals("publishLocalService") || 
+                        method.getName().equals("addService")) {
+                        continue;
                     }
-                } catch (Exception e) {
-                    Log.warn("Error processing method " + method.getSignature() + ": " + e.getMessage());
-                    // Continue with next method
+
+                    if (!method.hasActiveBody()) {
+                        continue;
+                    }
+
+                    try {
+                        Body body = method.retrieveActiveBody();
+                        for (Unit unit : body.getUnits()) {
+                            String StmtMethodName = ""; 
+                            if(unit instanceof JInvokeStmt invokeStmt){
+                                if(invokeStmt.containsInvokeExpr()){
+                                    InvokeExpr invokeExpr = invokeStmt.getInvokeExpr();
+                                    StmtMethodName = invokeExpr.getMethod().getName();
+                                }
+                            } else if(unit instanceof JAssignStmt assignStmt){
+                                if(assignStmt.containsInvokeExpr()){
+                                    InvokeExpr invokeExpr = assignStmt.getInvokeExpr();
+                                    StmtMethodName = invokeExpr.getMethod().getName();
+                                }
+                            }
+                            
+                            if(StmtMethodName.equals("addService") || StmtMethodName.equals("publishBinderService")){
+                                foundMethodsInClass.add(method);
+                                break; 
+                            }
+                        }
+                    } catch (Exception e) {
+                        Log.warn("Error processing method " + method.getSignature() + " in parallel task (collectMethodsWithPBS): " + e.getMessage());
+                    }
                 }
+                return foundMethodsInClass;
+            });
+            futures.add(future);
+        }
+        
+        for (Future<List<SootMethod>> future : futures) {
+            try {
+                List<SootMethod> resultMethods = future.get();
+                if (resultMethods != null && !resultMethods.isEmpty()) {
+                    methodsWithPBS.addAll(resultMethods);
+                }
+            } catch (Exception e) {
+                Log.error("Error retrieving PBS methods from future: " + e.getMessage());
             }
         }
         
-        Log.info("Scanned " + totalClassesScanned + " classes and " + totalMethodsScanned + " methods");
-        Log.info("Found " + methodsWithPBS.size() + " methods with PBS calls");
-        return methodsWithPBS;
+        // Log.info("Scanned " + totalClassesScanned + " classes and " + totalMethodsScanned + " methods"); // Counts are not accurate anymore
+        Log.info("Found " + methodsWithPBS.size() + " methods with PBS calls (processed in parallel)");
+        return new HashSet<>(methodsWithPBS);
     }
     
     /**
@@ -253,13 +264,11 @@ public class APIFinder2 {
             processedMethods++;
             boolean successCheck = false;
             
-            // Skip ComponentResolver as in original WALA code
             if (method.getDeclaringClass().getName().equals("com.android.server.pm.ComponentResolver")) {
                 continue;
             }
             
             try {
-                // Analyze method calls directly using simple traversal
                 int previousSize = this.collectedServiceApis.size();
                 analyzeMethodCalls(method, method.getDeclaringClass());
                 
@@ -270,7 +279,6 @@ public class APIFinder2 {
                 Log.error("Error analyzing PBS method " + method.getSignature() + ": " + e.getMessage());
             }
             
-            // Fallback: Check if the declaring class is the Binder interface itself
             if (!successCheck) {
                 SootClass declaringClass = method.getDeclaringClass();
                 if (declaringClass.hasSuperclass() && 
@@ -281,9 +289,10 @@ public class APIFinder2 {
                     SootClass binderInterface = getBinderInterfaceFromServiceClass(serviceClass);
                     
                     if (binderInterface != null) {
-                        Map.Entry<SootClass, HashSet<SootMethod>> result = getServiceAPIListWithClass(binderInterface, serviceClass);
-                        if (!result.getValue().isEmpty()) {
-                            this.collectedServiceApis.put(result.getKey(), result.getValue());
+                        Map.Entry<SootClass, Set<SootMethod>> resultEntry = getServiceAPIListWithClass(binderInterface, serviceClass);
+                        if (!resultEntry.getValue().isEmpty()) {
+                            // Ensure the Set value is thread-safe before putting into ConcurrentHashMap
+                            this.collectedServiceApis.put(resultEntry.getKey(), Collections.synchronizedSet(new HashSet<>(resultEntry.getValue())));
                         }
                     }
                 }
@@ -403,15 +412,14 @@ public class APIFinder2 {
                 RefType refType = (RefType) secondParam.getType();
                 SootClass serviceClass = refType.getSootClass();
                 if (serviceClass != null) {
-                    // For inner classes, log additional information
                     if (serviceClass.getName().contains("$")) {
                         // Silent processing of inner class service
                     }
                     SootClass binderInterface = getBinderInterfaceFromServiceClass(serviceClass);
                     if (binderInterface != null) {
-                        Map.Entry<SootClass, HashSet<SootMethod>> result = getServiceAPIListWithClass(binderInterface, serviceClass);
+                        Map.Entry<SootClass, Set<SootMethod>> result = getServiceAPIListWithClass(binderInterface, serviceClass);
                         if (!result.getValue().isEmpty()) {
-                            this.collectedServiceApis.put(result.getKey(), result.getValue());
+                            this.collectedServiceApis.put(result.getKey(), Collections.synchronizedSet(new HashSet<>(result.getValue())));
                         }
                     }
                 }
@@ -486,9 +494,9 @@ public class APIFinder2 {
         
         SootClass binderInterface = getBinderInterfaceFromServiceClass(serviceClass);
         if (binderInterface != null) {
-            Map.Entry<SootClass, HashSet<SootMethod>> result = getServiceAPIListWithClass(binderInterface, serviceClass);
+            Map.Entry<SootClass, Set<SootMethod>> result = getServiceAPIListWithClass(binderInterface, serviceClass);
             if (!result.getValue().isEmpty()) {
-                this.collectedServiceApis.put(result.getKey(), result.getValue());
+                this.collectedServiceApis.put(result.getKey(), Collections.synchronizedSet(new HashSet<>(result.getValue())));
             }
         }
     }
@@ -510,9 +518,9 @@ public class APIFinder2 {
                 if (serviceClass != null) {
                     SootClass binderInterface = getBinderInterfaceFromServiceClass(serviceClass);
                     if (binderInterface != null) {
-                        Map.Entry<SootClass, HashSet<SootMethod>> result = getServiceAPIListWithClass(binderInterface, serviceClass);
+                        Map.Entry<SootClass, Set<SootMethod>> result = getServiceAPIListWithClass(binderInterface, serviceClass);
                         if (!result.getValue().isEmpty()) {
-                            this.collectedServiceApis.put(result.getKey(), result.getValue());
+                            this.collectedServiceApis.put(result.getKey(), Collections.synchronizedSet(new HashSet<>(result.getValue())));
                         }
                     }
                 }
@@ -553,9 +561,9 @@ public class APIFinder2 {
                         // Extract the interface from the Stub
                         SootClass binderInterface = extractInterfaceFromStubClass(superClass);
                         if (binderInterface != null) {
-                            Map.Entry<SootClass, HashSet<SootMethod>> result = getServiceAPIListWithClass(binderInterface, sootClass);
+                            Map.Entry<SootClass, Set<SootMethod>> result = getServiceAPIListWithClass(binderInterface, sootClass);
                             if (!result.getValue().isEmpty()) {
-                                this.collectedServiceApis.put(result.getKey(), result.getValue());
+                                this.collectedServiceApis.put(result.getKey(), Collections.synchronizedSet(new HashSet<>(result.getValue())));
                                 return;
                             }
                         }
@@ -632,9 +640,9 @@ public class APIFinder2 {
                         // Extract the interface from the Stub class
                         SootClass binderInterface = extractInterfaceFromStubClass(superClass);
                         if (binderInterface != null) {
-                            Map.Entry<SootClass, HashSet<SootMethod>> result = getServiceAPIListWithClass(binderInterface, serviceClass);
+                            Map.Entry<SootClass, Set<SootMethod>> result = getServiceAPIListWithClass(binderInterface, serviceClass);
                             if (!result.getValue().isEmpty()) {
-                                this.collectedServiceApis.put(result.getKey(), result.getValue());
+                                this.collectedServiceApis.put(result.getKey(), Collections.synchronizedSet(new HashSet<>(result.getValue())));
                                 return;
                             }
                         }
@@ -643,9 +651,9 @@ public class APIFinder2 {
                     // Fallback: try normal binder interface search on superclass
                     SootClass binderInterface = getBinderInterfaceFromServiceClass(superClass);
                     if (binderInterface != null) {
-                        Map.Entry<SootClass, HashSet<SootMethod>> result = getServiceAPIListWithClass(binderInterface, serviceClass);
+                        Map.Entry<SootClass, Set<SootMethod>> result = getServiceAPIListWithClass(binderInterface, serviceClass);
                         if (!result.getValue().isEmpty()) {
-                            this.collectedServiceApis.put(result.getKey(), result.getValue());
+                            this.collectedServiceApis.put(result.getKey(), Collections.synchronizedSet(new HashSet<>(result.getValue())));
                             return;
                         }
                     }
@@ -655,9 +663,9 @@ public class APIFinder2 {
             // Normal processing for non-anonymous classes
             SootClass binderInterface = getBinderInterfaceFromServiceClass(serviceClass);
             if (binderInterface != null) {
-                Map.Entry<SootClass, HashSet<SootMethod>> result = getServiceAPIListWithClass(binderInterface, serviceClass);
+                Map.Entry<SootClass, Set<SootMethod>> result = getServiceAPIListWithClass(binderInterface, serviceClass);
                 if (!result.getValue().isEmpty()) {
-                    this.collectedServiceApis.put(result.getKey(), result.getValue());
+                    this.collectedServiceApis.put(result.getKey(), Collections.synchronizedSet(new HashSet<>(result.getValue())));
                 }
             } else {
                 Log.warn("No binder interface found for service class: " + serviceClass.getName());
@@ -674,9 +682,9 @@ public class APIFinder2 {
         if (serviceClass != null) {
             SootClass binderInterface = getBinderInterfaceFromServiceClass(serviceClass);
             if (binderInterface != null) {
-                Map.Entry<SootClass, HashSet<SootMethod>> result = getServiceAPIListWithClass(binderInterface, serviceClass);
+                Map.Entry<SootClass, Set<SootMethod>> result = getServiceAPIListWithClass(binderInterface, serviceClass);
                 if (!result.getValue().isEmpty()) {
-                    this.collectedServiceApis.put(result.getKey(), result.getValue());
+                    this.collectedServiceApis.put(result.getKey(), Collections.synchronizedSet(new HashSet<>(result.getValue())));
                 }
             }
         }
@@ -748,9 +756,9 @@ public class APIFinder2 {
                         SootClass binderInterface = getBinderInterfaceFromServiceClass(serviceClass);
                         
                         if (binderInterface != null) {
-                            Map.Entry<SootClass, HashSet<SootMethod>> result = getServiceAPIListWithClass(binderInterface, serviceClass);
+                            Map.Entry<SootClass, Set<SootMethod>> result = getServiceAPIListWithClass(binderInterface, serviceClass);
                             if (!result.getValue().isEmpty()) {
-                                this.collectedServiceApis.put(result.getKey(), result.getValue());
+                                this.collectedServiceApis.put(result.getKey(), Collections.synchronizedSet(new HashSet<>(result.getValue())));
                                 Log.info("Case 3 - Found service class from Stub return type: " + result.getKey().getName());
                                 break;
                             }
@@ -765,8 +773,8 @@ public class APIFinder2 {
      * Get service API method list by matching binder interface methods with service class methods
      * Returns a map entry where key is the actual service class to use, and value is the API methods
      */
-    private Map.Entry<SootClass, HashSet<SootMethod>> getServiceAPIListWithClass(SootClass binderInterface, SootClass serviceClass) {
-        HashSet<SootMethod> apiList = new HashSet<>();
+    private Map.Entry<SootClass, Set<SootMethod>> getServiceAPIListWithClass(SootClass binderInterface, SootClass serviceClass) {
+        Set<SootMethod> apiList = new HashSet<>();
         
         // Check if service class is abstract, find concrete implementation
         SootClass originalServiceClass = serviceClass;
@@ -881,8 +889,8 @@ public class APIFinder2 {
      * Get service API method list by matching binder interface methods with service class methods
      * This is a wrapper method that maintains backward compatibility
      */
-    private HashSet<SootMethod> getServiceAPIList(SootClass binderInterface, SootClass serviceClass) {
-        Map.Entry<SootClass, HashSet<SootMethod>> result = getServiceAPIListWithClass(binderInterface, serviceClass);
+    private Set<SootMethod> getServiceAPIList(SootClass binderInterface, SootClass serviceClass) {
+        Map.Entry<SootClass, Set<SootMethod>> result = getServiceAPIListWithClass(binderInterface, serviceClass);
         return result.getValue();
     }
     
@@ -1196,5 +1204,23 @@ public class APIFinder2 {
         }
         
         return false;
+    }
+
+    public void shutdownExecutor() {
+        if (this.executorService != null && !this.executorService.isShutdown()) {
+            Log.info("Shutting down executor service for " + this.getClass().getSimpleName());
+            this.executorService.shutdown();
+            try {
+                if (!this.executorService.awaitTermination(60, TimeUnit.SECONDS)) {
+                    this.executorService.shutdownNow();
+                    if (!this.executorService.awaitTermination(60, TimeUnit.SECONDS)) {
+                        Log.error("Executor service did not terminate for " + this.getClass().getSimpleName());
+                    }
+                }
+            } catch (InterruptedException ie) {
+                this.executorService.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        }
     }
 }

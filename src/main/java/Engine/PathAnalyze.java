@@ -5,6 +5,7 @@ import accessControl.*;
 import init.Config;
 import module.HookSymbol;
 import solver.SymbolSolver;
+import solver.Z3ExpressionFormatter;
 
 import com.microsoft.z3.Context;
 import com.microsoft.z3.Expr;
@@ -59,7 +60,7 @@ public class PathAnalyze {
         List<SymBase> entryParams = new ArrayList<>();
         for(int i = 0; i < paramTypes.size(); i++){
             Type paramType = paramTypes.get(i);
-            String name = String.format("API_INPUT%d_%s",i,paramType.toString());
+            String name = String.format("INPUT%d_%s",i,paramType.toString());
             SymBase paramExpr = SymGen.makeSymbol(this.z3Ctx,paramType,name);
             entryParams.add(paramExpr);
         }
@@ -94,18 +95,32 @@ public class PathAnalyze {
             Log.error("Unsupported value type: " + v.getClass());
     }
 
-    public SimState handleInitMethod() {
+    public SimState handleInitMethod(SootClass sc) {
         SimState initState = new SimState();
-        SootClass sc = this.entryMethod.getDeclaringClass();
-        // has <clinit>?
         SootMethod clinitMethod = sc.getMethodByNameUnsafe("<clinit>");
+        initState.initStaticField(sc);
         if (clinitMethod != null) {
             analyzeMethod(clinitMethod, initState);
         }
+
         return initState;
     }
 
-    public void handleArrayAssign(JAssignStmt assignStmt, SimState state){}
+    public Map<String, SymBase> handleInitMethod_map(SootClass sc) {
+        SimState initState = new SimState();
+        SootMethod clinitMethod = sc.getMethodByNameUnsafe("<clinit>");
+        initState.initStaticField(sc);
+        if (clinitMethod != null) {
+            analyzeMethod(clinitMethod, initState);
+        }
+
+        return initState.staticFieldMap;
+    }
+
+    public void handleArrayAssign(JAssignStmt assignStmt, SimState state){
+
+        
+    }
 
     public static boolean hasMultipleInDegrees(UnitGraph cfg, Unit unit) {
         List<Unit> predecessors = cfg.getPredsOf(unit);
@@ -114,7 +129,7 @@ public class PathAnalyze {
     
 
     public void startAnalyze() {
-        SimState initState = handleInitMethod();
+        SimState initState = handleInitMethod(this.entryMethod.getDeclaringClass());
         this.enableSolve = true;
 
         //symbolize params
@@ -941,43 +956,64 @@ public class PathAnalyze {
             return;
         }
 
-        if(!state.isClear()){ // 
-            boolean isEnforcePermission = EnforcePermissionAPI.isEnforcePermissionAPI(className, methodName);
-            boolean isCheckPermission = CheckPermissionAPI.isCheckPermissionAPI(className, methodName);
-            //hook
-            if (isEnforcePermission || isCheckPermission) {
-                Log.warn("[+] Handle Permission API: " + className + "." + methodName);
-                SymBase e = HookSymbol.handlePermissionAPI(this.z3Ctx, expr, state);
-                if (e != null) {
-                    //spceial case for enforce
-                    //throw SecurityException
-                    if(isEnforcePermission){
-                        SimState throwState = state.copy();
-                        Unit exceptionHandler = getExceptionHandler(curUnit, throwState, Scene.v().getRefType("java.lang.SecurityException"));
-                        if(exceptionHandler != null ){ 
-                            throwState.popGlobalConstraint();
-                            SymBase permissionExpr = e;
-                            Expr permissionValue = this.z3Ctx.mkNot(this.z3Ctx.mkEq(permissionExpr.getExpr(), z3Ctx.mkBV(EnforcePermissionAPI.PERMISSION_GRANTED, 32)));
-                            throwState.addGlobalConstraint(permissionValue);
-                            doOne(exceptionHandler, throwState, false);
-                            // return;
-                        } 
-                    }
+        // ----------------------------- Permission API -----------------------------
 
-                    Unit ret = postInvoke(state);
-                    if (ret instanceof JAssignStmt assign) {
-                        Value left = assign.getLeftOp();
-                        updateValue(left, e, state);
-                    } else if(ret instanceof JInvokeStmt invokeStmt){
-                        // VOID invoke
-                    } else {
-                        Log.error("Unsupported Ret Unit type: " + ret.getClass());
-                    }
-                    doOne(ret, state, true);
-                    return;
+        boolean isEnforcePermission = EnforcePermissionAPI.isEnforcePermissionAPI(className, methodName);
+        boolean isCheckPermission = CheckPermissionAPI.isCheckPermissionAPI(className, methodName);
+        //hook
+        if (isEnforcePermission || isCheckPermission) {
+            Log.warn("[+] Handle Permission API: " + className + "." + methodName);
+            SymBase e = HookSymbol.handlePermissionAPI(this.z3Ctx, expr, state);
+            if (e != null) {
+                //spceial case for enforce
+                //throw SecurityException
+                if(isEnforcePermission){
+                    SimState throwState = state.copy();
+                    Unit exceptionHandler = getExceptionHandler(curUnit, throwState, Scene.v().getRefType("java.lang.SecurityException"));
+                    if(exceptionHandler != null ){ 
+                        throwState.popGlobalConstraint();
+                        SymBase permissionExpr = e;
+                        Expr permissionValue = this.z3Ctx.mkNot(this.z3Ctx.mkEq(permissionExpr.getExpr(), z3Ctx.mkBV(EnforcePermissionAPI.PERMISSION_GRANTED, 32)));
+                        throwState.addGlobalConstraint(permissionValue);
+                        doOne(exceptionHandler, throwState, false);
+                        // return;
+                    } 
                 }
-            
-            } else if (CheckUidAPI.allClassNames.contains(className) && methodName.equals("getCallingUid")) {
+
+                Unit ret = postInvoke(state);
+                if (ret instanceof JAssignStmt assign) {
+                    Value left = assign.getLeftOp();
+                    updateValue(left, e, state);
+                } else if(ret instanceof JInvokeStmt ){
+                    // VOID invoke
+                } else {
+                    Log.error("Unsupported Ret Unit type: " + ret.getClass());
+                }
+                doOne(ret, state, true);
+                return;
+            }
+        } 
+        
+        else if (CheckAppOpAPI.getAllClassName().contains(className)) {
+            Log.warn("[+] Find AppOp API: " + className + "." + methodName);
+            SymBase e = HookSymbol.handleAppOpAPI(this.z3Ctx, expr, state);
+            if (e != null) {
+                Unit ret = postInvoke(state);
+                if (ret instanceof AssignStmt assign) {
+                    Value left = assign.getLeftOp();
+                    updateValue(left, e, state);
+                } else {
+                    Log.error("Unsupported Ret Unit type:  " + ret.getClass());
+                }
+                doOne(ret, state, true);
+                return ;
+            }
+        }
+
+        // ----------------------------- UID API -----------------------------
+
+        if(!state.isClear()) { // 
+            if (CheckUidAPI.allClassNames.contains(className) && methodName.equals("getCallingUid")) {
                 Log.warn("[+] Find UID API: " + className + "." + methodName);
                 SymBase e = HookSymbol.handleUidAPI(this.z3Ctx, expr, state);
                 if (e != null) {
@@ -1005,22 +1041,52 @@ public class PathAnalyze {
                     doOne(ret, state, true);
                     return;
                 }
-            } else if (CheckAppOpAPI.getAllClassName().contains(className)) {
-                Log.warn("[+] Find AppOp API: " + className + "." + methodName);
-                SymBase e = HookSymbol.handleAppOpAPI(this.z3Ctx, expr, state);
+            } else if (CheckUserIdAPI.allClassNames.contains(className) && methodName.equals("getCallingUserId")) {
+                Log.warn("[+] Find UserId API: " + className + "." + methodName);
+                SymBase e = HookSymbol.handleUserIdAPI(this.z3Ctx, expr, state);
                 if (e != null) {
                     Unit ret = postInvoke(state);
                     if (ret instanceof AssignStmt assign) {
                         Value left = assign.getLeftOp();
                         updateValue(left, e, state);
                     } else {
-                        Log.error("Unsupported Ret Unit type:  " + ret.getClass());
+                        Log.error("Unsupported Ret Unit type: " + ret.getClass());
                     }
                     doOne(ret, state, true);
-                    return ;
+                    return;
                 }
             }
         }
+
+        // ----------------------------- PackageName API -----------------------------
+
+        if (CheckPackageNameAPI.isPackageNameAPI(className, methodName)) {
+            Log.warn("[+] Find PackageName API: " + className + "." + methodName);
+            // get params
+            List<SymBase> params = state.getLastParam();
+            SymBase result = null;
+            if(params.size() == 1){
+                SymBase param = params.get(0);
+                if(param instanceof SymPrim prim0){
+                    Expr id = prim0.getExpr();
+                    if(id != null && id.toString().contains("CallingUid")){
+                        result = HookSymbol.handlePackageNameAPI(this.z3Ctx, expr, state);
+                    }
+                }
+            }
+            if(result != null){
+                Unit ret = postInvoke(state);
+                if (ret instanceof AssignStmt assign) {
+                    Value left = assign.getLeftOp();
+                    updateValue(left, result, state);
+                } else {
+                    Log.error("Unsupported Ret Unit type: " + ret.getClass());
+                }
+                doOne(ret, state, true);
+            }
+        }
+        
+
 
         if (className.equals("java.lang.Exception")) {
             Log.warn("Exception invoke. Terminate.");
@@ -1096,6 +1162,12 @@ public class PathAnalyze {
             // && !BlackList.isBlackList(className, methodName) 
         ) {
             state.addVisitedMethod(callee);
+            if(!state.isStaticFieldInit(callee.getDeclaringClass())){
+                Map<String, SymBase> staticFieldMap = handleInitMethod_map(callee.getDeclaringClass());
+                for(Map.Entry<String, SymBase> entry : staticFieldMap.entrySet()){
+                    state.addStaticField(entry.getKey(), entry.getValue());
+                }
+            }
             analyzeMethod(callee, state);
             return;
         } else { // DO NOTHING
@@ -1103,7 +1175,13 @@ public class PathAnalyze {
 
             if (ret instanceof AssignStmt assign) {
                 Value left = assign.getLeftOp();
-                String name = className.split("\\.")[className.split("\\.").length - 1] + "." + methodName;
+                //get args count
+                int argsCount = expr.getArgs().size();
+                List<SymBase> params = null;
+                if(argsCount > 0){
+                    params = state.getLastParam();
+                }
+                String name = makeReutrnString(className, methodName, params);
                 SymBase e = SymGen.makeSymbol(this.z3Ctx,left.getType(),name);
                 if(e != null){
                     updateValue(left, e, state);
@@ -1163,6 +1241,29 @@ public class PathAnalyze {
         state.popLocalConstraints();
         state.popLocalMap();
         return state.popCall();
+    }
+
+
+    public String makeReutrnString(String className, String methodName, List<SymBase> params){
+        String result = className.split("\\.")[className.split("\\.").length - 1] + "." + methodName + "(";
+        if(params == null){
+            return result + ")";
+        }
+        else{
+            for(SymBase p : params){
+                if(p != null){
+                Expr v = p.getExpr();
+                String exprName = Z3ExpressionFormatter.formatExpression(v);
+                    if(v != null){
+                        result += exprName.replace("|", "").replace("\"", "") + " ,";
+                    }
+                }
+            }
+            result = result.substring(0, result.length() - 2);
+        }
+
+        result += ")";
+        return result;
     }
 
 

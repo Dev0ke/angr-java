@@ -115,16 +115,16 @@ public class SymbolSolver {
                     constraintCount++;
                 }
             }
-            
+            symbolName = symbolName.replace("|", "");
             // If there are few constraints, try to find all values
             if (constraintCount <= 2) {
                 List<String> values = findAllValues(ctx, solver, model, symbolName);
                 if (values.size() <= 50) {
                     // For symbols with <= 50 values, format as "x = [1,2,3]" or "x = 1" for single value
                     if (values.size() == 1) {
-                        results.add(symbolName + " == " + values.get(0));
+                        results.add(symbolName + " == " + values.get(0).replace("|", ""));
                     } else {
-                        results.add(symbolName + " == " + values);
+                        results.add(symbolName + " == " + values.toString().replace("|", ""));
                     }
                     symbolsWithFewValues.add(symbolName);
                 } else {
@@ -163,9 +163,13 @@ public class SymbolSolver {
             // Format and output each constraint
             StringBuilder constraintOutput = new StringBuilder();
             // constraintOutput.append("Constraints for ").append(String.join(", ", symbolsWithManyValues)).append(":\n");
-            for (BoolExpr formula : formulas) {
-                String formattedConstraint = Z3ExpressionFormatter.formatConstraint(formula);
-                constraintOutput.append(formattedConstraint).append(", ");  // Add space after each constraint
+            for (int i = 0; i < formulas.length; i++) {
+                String formattedConstraint = Z3ExpressionFormatter.formatConstraint(formulas[i]).replace("|", "");
+                constraintOutput.append(formattedConstraint);
+                // Add comma separator only if not the last element
+                if (i < formulas.length - 1) {
+                    constraintOutput.append(", ");
+                }
             }
             results.add(constraintOutput.toString().trim());
         }

@@ -32,6 +32,8 @@ public class CheckPackageNameAPI {
         String[][] apiData = {
                 //pid
                 {"android.content.Context", "getPackageName"},
+                {"android.content.pm.PackageManager", "getNameForUid"},
+                {"android.app.ActivityManagerService", "getPackagesForUid"}
 
         };
         initialize(apiData);
@@ -50,6 +52,10 @@ public class CheckPackageNameAPI {
     }
     public static HashSet<String> getAllMethodNameByClassName(String className){
         return apiMap.getOrDefault(className, new HashSet<>());
+    }
+
+    public static boolean isPackageNameAPI(String className, String methodName){
+        return apiMap.containsKey(className) && apiMap.get(className).contains(methodName);
     }
 
 

@@ -3,6 +3,8 @@ package solver;
 import com.microsoft.z3.*;
 import java.util.*;
 
+import utils.Log;
+
 public class Z3ExpressionFormatter {
     
     private static final Map<String, String> OPERATOR_MAP = new HashMap<String, String>() {{
@@ -20,9 +22,11 @@ public class Z3ExpressionFormatter {
         put("bvudiv", "/");
         put("bvsdiv", "/");
         put("bvsdiv_i", "/");
+        put("bvudiv_i", "/");
         put("bvurem", "%");
         put("bvsrem", "%");
         put("bvsrem_i", "%");
+        put("bvurem_i", "%");
         put("bvsmod", "%");
         put("bvand", "&");
         put("bvor", "|");
@@ -31,6 +35,9 @@ public class Z3ExpressionFormatter {
         put("bvshl", "<<");
         put("bvlshr", ">>");
         put("bvashr", ">>>");
+        put("bvshl_i", "<<");
+        put("bvlshr_i", ">>");
+        put("bvashr_i", ">>>");
         put("lengthof", "length");
     }};
 
@@ -45,9 +52,11 @@ public class Z3ExpressionFormatter {
             return formatIntExpr((IntExpr)expr);
         } else if (expr instanceof RealExpr) {
             return formatRealExpr((RealExpr)expr);
+        } else {
+            Log.info("Unknown expression type: " + expr.getClass().getName());
+            return expr.toString();
         }
         
-        return expr.toString();
     }
 
     private static String formatBoolExpr(BoolExpr expr) {
@@ -204,10 +213,18 @@ public class Z3ExpressionFormatter {
             put("bvudiv", 1);
             put("bvsdiv", 1);
             put("bvsdiv_i", 1);
+            put("bvudiv_i", 1);
             put("bvurem", 1);
             put("bvsrem", 1);
             put("bvsrem_i", 1);
+            put("bvurem_i", 1);
             put("bvsmod", 1);
+            put("bvshl", 1);
+            put("bvlshr", 1);
+            put("bvashr", 1);
+            put("bvshl_i", 1);
+            put("bvlshr_i", 1);
+            put("bvashr_i", 1);
         }};
         
         Integer childPrec = precedence.get(childOp);

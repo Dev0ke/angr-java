@@ -27,7 +27,7 @@ public class CheckUidAPI {
         String[][] apiData = {
                 //uid
                 {"android.os.Binder","getCallingUid"},
-                {"android.os.UserHandle","getCallingUserId"}
+                // {"android.os.UserHandle","getCallingUserId"}
 
 
 

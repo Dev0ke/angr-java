@@ -270,6 +270,17 @@ public class SymGen {
         Type leftType = binopExpr.getOp1().getType();
         boolean isSigned = TypeUtils.isSignedType(leftType);
 
+        //get width
+        int leftWidth = leftBV.getSortSize();
+        int rightWidth = rightBV.getSortSize();
+        if(leftWidth < rightWidth){
+            //right truncate
+            rightBV = ctx.mkExtract(leftWidth - 1, 0, rightBV);
+        } else if(leftWidth > rightWidth){
+            //left truncate
+            leftBV = ctx.mkExtract(rightWidth - 1, 0, leftBV);
+        }
+
         // Use instanceof pattern matching for more efficient operator checks
         // Comparison operators
         Expr result;
@@ -391,51 +402,51 @@ public class SymGen {
         // Handle arithmetic constants efficiently
         if (src instanceof ArithmeticConstant) {
             if (src instanceof BooleanConstant boolConstant) {
-                return new SymPrim(type, ctx.mkBV(boolConstant.getBoolean() ? 1 : 0, 1));
+                return new SymPrim(type, ctx.mkBV(boolConstant.getBoolean() ? 1 : 0, 1),"const_bool_" + boolConstant.getBoolean());
             }
             
             if (src instanceof CharConstant charConstant) {
-                return new SymPrim(type, ctx.mkBV(charConstant.value, 16));
+                return new SymPrim(type, ctx.mkBV(charConstant.value, 16),"const_char_" + charConstant.value);
             }
             
             if (src instanceof ByteConstant byteConstant) {
-                return new SymPrim(type, ctx.mkBV(byteConstant.value, 8));
+                return new SymPrim(type, ctx.mkBV(byteConstant.value, 8),"const_byte_" + byteConstant.value);
             }
             
             if (src instanceof UByteConstant ubyteConstant) {
-                return new SymPrim(type, ctx.mkBV(ubyteConstant.value, 8));
+                return new SymPrim(type, ctx.mkBV(ubyteConstant.value, 8),"const_ubyte_" + ubyteConstant.value);
             }
             
             if (src instanceof ShortConstant shortConstant) {
-                return new SymPrim(type, ctx.mkBV(shortConstant.value, 16));
+                return new SymPrim(type, ctx.mkBV(shortConstant.value, 16),"const_short_" + shortConstant.value);
             }
             
             if (src instanceof UShortConstant ushortConstant) {
-                return new SymPrim(type, ctx.mkBV(ushortConstant.value, 16));
+                return new SymPrim(type, ctx.mkBV(ushortConstant.value, 16),"const_ushort_" + ushortConstant.value);
             }
             
             if (src instanceof IntConstant intConstant) {
-                return new SymPrim(type, ctx.mkBV(intConstant.value, 32));
+                return new SymPrim(type, ctx.mkBV(intConstant.value, 32),"const_int_" + intConstant.value);
             }
             
             if (src instanceof UIntConstant uintConstant) {
-                return new SymPrim(type, ctx.mkBV(uintConstant.value, 32));
+                return new SymPrim(type, ctx.mkBV(uintConstant.value, 32),"const_uint_" + uintConstant.value);
             }
             
             if (src instanceof DIntConstant dIntConstant) {
-                return new SymPrim(type, ctx.mkBV(dIntConstant.value, 32));
+                return new SymPrim(type, ctx.mkBV(dIntConstant.value, 32),"const_dint_" + dIntConstant.value);
             }
             
             if (src instanceof LongConstant longConstant) {
-                return new SymPrim(type, ctx.mkBV(longConstant.value, 64));
+                return new SymPrim(type, ctx.mkBV(longConstant.value, 64),"const_long_" + longConstant.value);
             }
             
             if (src instanceof ULongConstant uLongConstant) {
-                return new SymPrim(type, ctx.mkBV(uLongConstant.value, 64));
+                return new SymPrim(type, ctx.mkBV(uLongConstant.value, 64),"const_ulong_" + uLongConstant.value);
             }
             
             Log.error("Unsupported ArithmeticConstant: " + src.getClass());
-            return new SymBase(type);
+            return new SymBase(type,"const_unknown_" + src.toString());
         }
         
         // Handle other constant types

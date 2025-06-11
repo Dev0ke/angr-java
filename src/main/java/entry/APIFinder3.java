@@ -11,6 +11,12 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
 import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.Future;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.Collections;
 
 /**
  * APIFinder3 - 专门用于发现Android应用服务API的查找器
@@ -19,12 +25,15 @@ import java.util.*;
  */
 public class APIFinder3 {
     
-    private HashSet<SootMethod> visitedMethods;
-    private HashMap<SootClass, HashSet<SootMethod>> collectedServiceApis;
+    private Set<SootMethod> visitedMethods;
+    private Map<SootClass, Set<SootMethod>> collectedServiceApis;
+    private transient ExecutorService executorService; 
+    private final int numThreads = Runtime.getRuntime().availableProcessors();
     
     public APIFinder3() {
-        this.visitedMethods = new HashSet<>();
-        this.collectedServiceApis = new HashMap<>();
+        this.visitedMethods = Collections.synchronizedSet(new HashSet<>());
+        this.collectedServiceApis = new ConcurrentHashMap<>();
+        this.executorService = Executors.newFixedThreadPool(numThreads);
     }
 
     /**
@@ -38,6 +47,10 @@ public class APIFinder3 {
         // 重置状态
         this.visitedMethods.clear();
         this.collectedServiceApis.clear();
+        // Ensure executor is ready (it's initialized in constructor, but good practice if it could be shut down and restarted)
+        if (this.executorService == null || this.executorService.isShutdown()) {
+            this.executorService = Executors.newFixedThreadPool(numThreads);
+        }
         
         // 如果使用缓存，从文件加载
         HashSet<SootClass> applicationServiceClasses;
@@ -57,7 +70,7 @@ public class APIFinder3 {
         
         // 转换结果格式
         HashMap<String, HashSet<String>> result = new HashMap<>();
-        for (Map.Entry<SootClass, HashSet<SootMethod>> entry : collectedServiceApis.entrySet()) {
+        for (Map.Entry<SootClass, Set<SootMethod>> entry : collectedServiceApis.entrySet()) {
             String className = entry.getKey().getName();
             HashSet<String> methodSignatures = new HashSet<>();
             for (SootMethod method : entry.getValue()) {
@@ -117,22 +130,37 @@ public class APIFinder3 {
      * 查找继承特定抽象基类且包含getIBinder方法的类
      */
     private HashSet<SootClass> findServiceClassesByAbstractBase() {
-        HashSet<SootClass> serviceClasses = new HashSet<>();
-        
+        Set<SootClass> serviceClasses = Collections.synchronizedSet(new HashSet<>()); 
+        List<Future<SootClass>> futures = new ArrayList<>();
+
         Chain<SootClass> allClasses = Scene.v().getApplicationClasses();
         for (SootClass sootClass : allClasses) {
-            try {
-                // 检查是否继承了应用服务相关的抽象基类
-                if (extendsApplicationServiceBase(sootClass) && hasIBinderMethod(sootClass)) {
-                    serviceClasses.add(sootClass);
-                    Log.info("Abstract base pattern found service: " + sootClass.getName());
+            final SootClass currentClass = sootClass; 
+            Future<SootClass> future = executorService.submit(() -> {
+                try {
+                    if (extendsApplicationServiceBase(currentClass) && hasIBinderMethod(currentClass)) {
+                        return currentClass; 
+                    }
+                } catch (Exception e) {
+                    Log.warn("Error processing class " + currentClass.getName() + " in parallel (AbstractBase): " + e.getMessage());
                 }
-            } catch (Exception e) {
-                Log.warn("Error processing class " + sootClass.getName() + ": " + e.getMessage());
+                return null; 
+            });
+            futures.add(future);
+        }
+
+        for (Future<SootClass> future : futures) {
+            try {
+                SootClass resultClass = future.get(); 
+                if (resultClass != null) {
+                    serviceClasses.add(resultClass);
+                    Log.info("Abstract base pattern found service: " + resultClass.getName());
+                }
+            } catch (Exception e) { 
+                Log.error("Error retrieving result from AbstractBase future: " + e.getMessage());
             }
         }
-        
-        return serviceClasses;
+        return new HashSet<>(serviceClasses); 
     }
 
     /**
@@ -140,34 +168,49 @@ public class APIFinder3 {
      * 查找包含继承$Stub类的内部类的外部类
      */
     private HashSet<SootClass> findServiceClassesByStubPattern() {
-        HashSet<SootClass> serviceClasses = new HashSet<>();
+        Set<SootClass> serviceClasses = Collections.synchronizedSet(new HashSet<>());
+        List<Future<SootClass>> futures = new ArrayList<>();
         
         Chain<SootClass> allClasses = Scene.v().getApplicationClasses();
         for (SootClass sootClass : allClasses) {
-            String className = sootClass.getName();
-            
-            // 查找内部类，检查是否继承了Stub
-            if (className.contains("$")) {
-                try {
-                    if (sootClass.hasSuperclass()) {
-                        SootClass superClass = sootClass.getSuperclass();
-                        if (superClass.getName().contains("$Stub")) {
-                            // 找到Stub实现，获取外部类
-                            String outerClassName = className.substring(0, className.lastIndexOf('$'));
-                            SootClass outerClass = getSootClassSafely(outerClassName);
-                            if (outerClass != null) {
-                                serviceClasses.add(outerClass);
-                                Log.info("Stub pattern found service: " + outerClassName + " (via inner class " + className + ")");
+            final SootClass currentClass = sootClass;
+            Future<SootClass> future = executorService.submit(() -> {
+                String className = currentClass.getName();
+                if (className.contains("$")) {
+                    try {
+                        if (currentClass.hasSuperclass()) {
+                            SootClass superClass = currentClass.getSuperclass();
+                            if (superClass.getName().contains("$Stub")) {
+                                String outerClassName = className.substring(0, className.lastIndexOf('$'));
+                                SootClass outerClass = getSootClassSafely(outerClassName); 
+                                if (outerClass != null) {
+                                    return outerClass;
+                                }
                             }
                         }
+                    } catch (Exception e) {
+                        Log.warn("Error processing Stub class " + className + " in parallel: " + e.getMessage());
                     }
-                } catch (Exception e) {
-                    Log.warn("Error processing Stub class " + className + ": " + e.getMessage());
                 }
+                return null;
+            });
+            futures.add(future);
+        }
+
+        for (Future<SootClass> future : futures) {
+            try {
+                SootClass resultClass = future.get();
+                if (resultClass != null) {
+                    serviceClasses.add(resultClass);
+                    // Logging for the specific inner class that led to this outer class might be complex here
+                    // We can log the outer class that was added.
+                    Log.info("Stub pattern found service (outer class): " + resultClass.getName());
+                }
+            } catch (Exception e) {
+                Log.error("Error retrieving result from StubPattern future: " + e.getMessage());
             }
         }
-        
-        return serviceClasses;
+        return new HashSet<>(serviceClasses);
     }
 
     /**
@@ -175,25 +218,39 @@ public class APIFinder3 {
      * 查找具有IBinder相关方法的服务类
      */
     private HashSet<SootClass> findServiceClassesByIBinderPattern() {
-        HashSet<SootClass> serviceClasses = new HashSet<>();
-        
+        Set<SootClass> serviceClasses = Collections.synchronizedSet(new HashSet<>());
+        List<Future<SootClass>> futures = new ArrayList<>();
+
         Chain<SootClass> allClasses = Scene.v().getApplicationClasses();
         for (SootClass sootClass : allClasses) {
-            try {
-                // 检查是否有IBinder相关方法
-                if (hasIBinderMethod(sootClass) || hasOnBindMethod(sootClass)) {
-                    // 进一步验证是否为服务类
-                    if (isLikelyServiceClass(sootClass)) {
-                        serviceClasses.add(sootClass);
-                        Log.info("IBinder pattern found service: " + sootClass.getName());
+            final SootClass currentClass = sootClass;
+            Future<SootClass> future = executorService.submit(() -> {
+                try {
+                    if (hasIBinderMethod(currentClass) || hasOnBindMethod(currentClass)) {
+                        if (isLikelyServiceClass(currentClass)) {
+                            return currentClass;
+                        }
                     }
+                } catch (Exception e) {
+                    Log.warn("Error processing IBinder pattern for " + currentClass.getName() + " in parallel: " + e.getMessage());
+                }
+                return null;
+            });
+            futures.add(future);
+        }
+
+        for (Future<SootClass> future : futures) {
+            try {
+                SootClass resultClass = future.get();
+                if (resultClass != null) {
+                    serviceClasses.add(resultClass);
+                    Log.info("IBinder pattern found service: " + resultClass.getName());
                 }
             } catch (Exception e) {
-                Log.warn("Error processing IBinder pattern for " + sootClass.getName() + ": " + e.getMessage());
+                Log.error("Error retrieving result from IBinderPattern future: " + e.getMessage());
             }
         }
-        
-        return serviceClasses;
+        return new HashSet<>(serviceClasses);
     }
 
     /**
@@ -201,114 +258,129 @@ public class APIFinder3 {
      * 查找直接继承*.Stub类的具体服务实现
      */
     private HashSet<SootClass> findServiceClassesByDirectStubInheritance() {
-        HashSet<SootClass> serviceClasses = new HashSet<>();
-        
+        Set<SootClass> serviceClasses = Collections.synchronizedSet(new HashSet<>());
+        List<Future<SootClass>> futures = new ArrayList<>();
+
         Chain<SootClass> allClasses = Scene.v().getApplicationClasses();
         for (SootClass sootClass : allClasses) {
-            try {
-                // 检查是否直接继承了Stub类
-                if (sootClass.hasSuperclass()) {
-                    SootClass superClass = sootClass.getSuperclass();
-                    String superClassName = superClass.getName();
-                    
-                    // 检查父类是否是AIDL Stub类
-                    if (superClassName.contains("$Stub") && isValidStubClass(superClass)) {
-                        // 确保这是一个具体的服务实现类，不是抽象类或接口
-                        if (!sootClass.isAbstract() && !sootClass.isInterface()) {
-                            serviceClasses.add(sootClass);
-                            Log.info("Direct Stub inheritance found service: " + sootClass.getName() + 
-                                   " extends " + superClassName);
+            final SootClass currentClass = sootClass;
+            Future<SootClass> future = executorService.submit(() -> {
+                try {
+                    if (currentClass.hasSuperclass()) {
+                        SootClass superClass = currentClass.getSuperclass();
+                        String superClassName = superClass.getName();
+                        if (superClassName.contains("$Stub") && isValidStubClass(superClass)) {
+                            if (!currentClass.isAbstract() && !currentClass.isInterface()) {
+                                return currentClass;
+                            }
                         }
                     }
+                } catch (Exception e) {
+                    Log.warn("Error processing direct Stub inheritance for " + currentClass.getName() + " in parallel: " + e.getMessage());
+                }
+                return null;
+            });
+            futures.add(future);
+        }
+
+        for (Future<SootClass> future : futures) {
+            try {
+                SootClass resultClass = future.get();
+                if (resultClass != null) {
+                    serviceClasses.add(resultClass);
+                    Log.info("Direct Stub inheritance found service: " + resultClass.getName() + 
+                               " extends " + resultClass.getSuperclass().getName()); // Be careful with resultClass.getSuperclass() if resultClass can be null from future
                 }
             } catch (Exception e) {
-                Log.warn("Error processing direct Stub inheritance for " + sootClass.getName() + ": " + e.getMessage());
+                Log.error("Error retrieving result from DirectStubInheritance future: " + e.getMessage());
             }
         }
-        
-        return serviceClasses;
+        return new HashSet<>(serviceClasses);
     }
 
     /**
      * 从识别的服务类中提取API方法
      */
     private void extractServiceAPIs(HashSet<SootClass> serviceClasses) {
+        List<Future<?>> futures = new ArrayList<>();
         for (SootClass serviceClass : serviceClasses) {
-            try {
-                Log.info("Extracting service APIs from: " + serviceClass.getName());
-                
-                HashSet<SootMethod> serviceApiMethods = new HashSet<>();
-                
-                // 检查服务类型并采用相应的API提取策略
-                if (isDirectStubServiceImplementation(serviceClass)) {
-                    // 对于直接继承Stub的服务实现
-                    Log.info("Processing direct Stub service implementation: " + serviceClass.getName());
-                    serviceApiMethods.addAll(extractAPIsFromDirectStubService(serviceClass));
-                } else {
-                    // 对于抽象基类服务
-                    Log.info("Processing abstract base service: " + serviceClass.getName());
+            final SootClass currentServiceClass = serviceClass;
+            Future<?> future = executorService.submit(() -> {
+                try {
+                    Log.info("Extracting service APIs from: " + currentServiceClass.getName());
                     
-                    // 方法1: 从抽象方法提取API（仅针对主服务类的真正抽象API）
-                    HashSet<SootMethod> abstractApis = extractAPIsFromAbstractMethods(serviceClass);
-                    serviceApiMethods.addAll(abstractApis);
+                    Set<SootMethod> serviceApiMethods = new HashSet<>();
                     
-                    // 重要改进：为每个内部Transport类单独提取和记录API
-                    HashSet<SootClass> transportClasses = findAllTransportClasses(serviceClass);
-                    for (SootClass transportClass : transportClasses) {
-                        try {
-                            Log.info("Extracting APIs for individual transport class: " + transportClass.getName());
-                            
-                            HashSet<SootMethod> transportSpecificApis = new HashSet<>();
-                            
-                            // 主要通过AIDL接口匹配方法（这是最准确的API提取方式）
-                            SootClass aidlInterface = findAIDLInterfaceFromTransport(transportClass);
-                            if (aidlInterface != null) {
-                                Log.info("Matching AIDL interface " + aidlInterface.getName() + " for transport " + transportClass.getName());
+                    if (isDirectStubServiceImplementation(currentServiceClass)) {
+                        Log.info("Processing direct Stub service implementation: " + currentServiceClass.getName());
+                        serviceApiMethods.addAll(extractAPIsFromDirectStubService(currentServiceClass));
+                    } else {
+                        Log.info("Processing abstract base service: " + currentServiceClass.getName());
+                        
+                        Set<SootMethod> abstractApis = extractAPIsFromAbstractMethods(currentServiceClass);
+                        serviceApiMethods.addAll(abstractApis);
+                        
+                        HashSet<SootClass> transportClasses = findAllTransportClasses(currentServiceClass);
+                        for (SootClass transportClass : transportClasses) {
+                            try {
+                                Log.info("Extracting APIs for individual transport class: " + transportClass.getName());
                                 
-                                for (SootMethod interfaceMethod : aidlInterface.getMethods()) {
-                                    if (!interfaceMethod.getName().startsWith("<") && 
-                                        !interfaceMethod.getName().equals("asBinder")) {
-                                        
-                                        // 在Transport类中查找实现
-                                        SootMethod implMethod = findMatchingImplementation(transportClass, interfaceMethod);
-                                        if (implMethod != null) {
-                                            transportSpecificApis.add(implMethod);
-                                            Log.debug("Matched AIDL method for transport " + transportClass.getName() + ": " + interfaceMethod.getName() + " -> " + implMethod.getSubSignature());
+                                HashSet<SootMethod> transportSpecificApis = new HashSet<>();
+                                
+                                SootClass aidlInterface = findAIDLInterfaceFromTransport(transportClass);
+                                if (aidlInterface != null) {
+                                    Log.info("Matching AIDL interface " + aidlInterface.getName() + " for transport " + transportClass.getName());
+                                    for (SootMethod interfaceMethod : aidlInterface.getMethods()) {
+                                        if (!interfaceMethod.getName().startsWith("<") && 
+                                            !interfaceMethod.getName().equals("asBinder")) {
+                                            SootMethod implMethod = findMatchingImplementation(transportClass, interfaceMethod);
+                                            if (implMethod != null) {
+                                                transportSpecificApis.add(implMethod);
+                                                Log.debug("Matched AIDL method for transport " + transportClass.getName() + ": " + interfaceMethod.getName() + " -> " + implMethod.getSubSignature());
+                                            }
                                         }
                                     }
                                 }
-                            }
-                            
-                            // 补充：如果AIDL接口匹配不够，添加Transport类中真正的API方法（经过过滤）
-                            for (SootMethod method : transportClass.getMethods()) {
-                                if (isValidPublicAPI(method)) {
-                                    transportSpecificApis.add(method);
-                                    Log.debug("Extracted validated API from transport " + transportClass.getName() + ": " + method.getSubSignature());
+                                
+                                for (SootMethod method : transportClass.getMethods()) {
+                                    if (isValidPublicAPI(method)) {
+                                        transportSpecificApis.add(method);
+                                        Log.debug("Extracted validated API from transport " + transportClass.getName() + ": " + method.getSubSignature());
+                                    }
                                 }
+                                
+                                if (!transportSpecificApis.isEmpty()) {
+                                    final Set<SootMethod> finalTransportSpecificApis = Collections.synchronizedSet(new HashSet<>(transportSpecificApis));
+                                    this.collectedServiceApis.put(transportClass, finalTransportSpecificApis);
+                                    Log.info("Successfully extracted " + finalTransportSpecificApis.size() + " API methods from transport service " + transportClass.getName());
+                                } else {
+                                    Log.warn("No APIs found for transport class: " + transportClass.getName());
+                                }
+                                
+                            } catch (Exception e) {
+                                Log.error("Error extracting APIs from transport class " + transportClass.getName() + " in parallel: " + e.getMessage());
                             }
-                            
-                            // 将Transport类作为独立的服务类添加到结果中
-                            if (!transportSpecificApis.isEmpty()) {
-                                this.collectedServiceApis.put(transportClass, transportSpecificApis);
-                                Log.info("Successfully extracted " + transportSpecificApis.size() + " API methods from transport service " + transportClass.getName());
-                            } else {
-                                Log.warn("No APIs found for transport class: " + transportClass.getName());
-                            }
-                            
-                        } catch (Exception e) {
-                            Log.error("Error extracting APIs from transport class " + transportClass.getName() + ": " + e.getMessage());
                         }
                     }
+                    
+                    if (!serviceApiMethods.isEmpty()) {
+                        final Set<SootMethod> finalServiceApiMethods = Collections.synchronizedSet(new HashSet<>(serviceApiMethods));
+                        this.collectedServiceApis.put(currentServiceClass, finalServiceApiMethods);
+                        Log.info("Successfully extracted " + finalServiceApiMethods.size() + " API methods from main service " + currentServiceClass.getName());
+                    }
+                    
+                } catch (Exception e) {
+                    Log.error("Error extracting APIs from " + currentServiceClass.getName() + " in parallel: " + e.getMessage());
                 }
-                
-                // 将主服务类的API添加到结果中（如果有的话）
-                if (!serviceApiMethods.isEmpty()) {
-                    this.collectedServiceApis.put(serviceClass, serviceApiMethods);
-                    Log.info("Successfully extracted " + serviceApiMethods.size() + " API methods from main service " + serviceClass.getName());
-                }
-                
+            });
+            futures.add(future);
+        }
+        
+        for (Future<?> future : futures) {
+            try {
+                future.get(); 
             } catch (Exception e) {
-                Log.error("Error extracting APIs from " + serviceClass.getName() + ": " + e.getMessage());
+                Log.error("Error waiting for API extraction future: " + e.getMessage());
             }
         }
     }
@@ -316,8 +388,8 @@ public class APIFinder3 {
     /**
      * 从直接继承Stub的服务实现中提取API方法
      */
-    private HashSet<SootMethod> extractAPIsFromDirectStubService(SootClass serviceClass) {
-        HashSet<SootMethod> apiMethods = new HashSet<>();
+    private Set<SootMethod> extractAPIsFromDirectStubService(SootClass serviceClass) {
+        Set<SootMethod> apiMethods = new HashSet<>();
         
         try {
             Log.info("Extracting APIs from direct Stub service: " + serviceClass.getName());
@@ -829,8 +901,8 @@ public class APIFinder3 {
     /**
      * 从Transport内部类提取API方法
      */
-    private HashSet<SootMethod> extractAPIsFromTransportClass(SootClass serviceClass) {
-        HashSet<SootMethod> apiMethods = new HashSet<>();
+    private Set<SootMethod> extractAPIsFromTransportClass(SootClass serviceClass) {
+        Set<SootMethod> apiMethods = new HashSet<>();
         
         try {
             // 查找所有继承Stub的内部类
@@ -909,8 +981,8 @@ public class APIFinder3 {
     /**
      * 从抽象方法提取API
      */
-    private HashSet<SootMethod> extractAPIsFromAbstractMethods(SootClass serviceClass) {
-        HashSet<SootMethod> apiMethods = new HashSet<>();
+    private Set<SootMethod> extractAPIsFromAbstractMethods(SootClass serviceClass) {
+        Set<SootMethod> apiMethods = new HashSet<>();
         
         try {
             // 查找服务类中的抽象方法（只有抽象方法才是真正需要实现的API）
@@ -925,7 +997,7 @@ public class APIFinder3 {
             if (serviceClass.hasSuperclass()) {
                 SootClass superClass = serviceClass.getSuperclass();
                 if (superClass.isAbstract()) {
-                    HashSet<SootMethod> parentApis = extractAPIsFromAbstractMethods(superClass);
+                    Set<SootMethod> parentApis = extractAPIsFromAbstractMethods(superClass);
                     apiMethods.addAll(parentApis);
                 }
             }
@@ -940,8 +1012,8 @@ public class APIFinder3 {
     /**
      * 匹配AIDL接口方法
      */
-    private HashSet<SootMethod> matchAIDLInterfaceMethods(SootClass serviceClass) {
-        HashSet<SootMethod> apiMethods = new HashSet<>();
+    private Set<SootMethod> matchAIDLInterfaceMethods(SootClass serviceClass) {
+        Set<SootMethod> apiMethods = new HashSet<>();
         
         try {
             // 查找所有相关的Transport类
@@ -1422,5 +1494,23 @@ public class APIFinder3 {
         }
         
         return false;
+    }
+
+    public void shutdownExecutor() {
+        if (this.executorService != null && !this.executorService.isShutdown()) {
+            Log.info("Shutting down executor service for " + this.getClass().getSimpleName());
+            this.executorService.shutdown();
+            try {
+                if (!this.executorService.awaitTermination(60, TimeUnit.SECONDS)) {
+                    this.executorService.shutdownNow();
+                    if (!this.executorService.awaitTermination(60, TimeUnit.SECONDS)) {
+                        Log.error("Executor service did not terminate for " + this.getClass().getSimpleName());
+                    }
+                }
+            } catch (InterruptedException ie) {
+                this.executorService.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        }
     }
 } 
